@@ -163,6 +163,8 @@ class OpencodeEngine:
                     # Los `completed` perdidos con el stream no volveran: sin esto
                     # el reloj quedaba pausado para siempre.
                     busy.clear()
+            # Sin SSE no hay a quien esperar: que el turno no se quede aguardando.
+            connected.set()
 
         listener = asyncio.create_task(listen())
         # El turno espera a que el SSE este conectado: un modelo que falla al

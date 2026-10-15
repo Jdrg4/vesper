@@ -314,5 +314,7 @@ class FakeOpencodeRunner(OpencodeRunner):
         return self.diff
 
     async def stream_events(self, client: httpx.AsyncClient) -> AsyncIterator[dict]:
+        # Como el real: lo primero que llega al suscribirse.
+        yield {"type": "server.connected", "properties": {}}
         for ev in self.events:
             yield ev
