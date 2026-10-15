@@ -47,6 +47,22 @@ async def test_job_con_prompt_nace_con_trigger_prompt(client, db_session):
     assert "Migra a Pydantic v2" in job.prompt
 
 
+async def test_la_api_devuelve_las_instrucciones_del_job(client, db_session):
+    """La UI muestra que se le pidio al agente; sin el campo, un job de prompt
+    libre no decia cual fue el encargo."""
+    from src.review_jobs.schemas import JobRead
+
+    auth = await _register(client, "leer-prompt")
+    repo = await _make_repo(db_session, auth["tenant_id"])
+    tenant = await db_session.get(Tenant, auth["tenant_id"])
+    job = await ReviewService(db_session).create_job(
+        tenant,
+        JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs, prompt="Documenta la API"),
+    )
+
+    assert "Documenta la API" in JobRead.model_validate(job).prompt
+
+
 async def test_job_sin_prompt_sigue_siendo_manual(client, db_session):
     auth = await _register(client, "manual")
     repo = await _make_repo(db_session, auth["tenant_id"])

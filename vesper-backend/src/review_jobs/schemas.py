@@ -27,6 +27,8 @@ class JobRead(BaseModel):
     trigger: str
     ref: str
     model: str
+    # Instrucciones completas que recibio el agente (preambulo + plantilla o prompt libre).
+    prompt: str | None = None
     pull_request_url: str | None = None
     branch_name: str | None = None
     diff_summary: str | None = None
