@@ -84,6 +84,10 @@ cat > /etc/systemd/system/docker.service.d/override.conf <<'UNIT'
 ExecStart=
 ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
 UNIT
+# dockerd escucha en IPs concretas (Tailscale/DHCP) que pueden no existir aún al arrancar; sin
+# esto falla, systemd agota StartLimitBurst en ~6 s y Docker queda caído en todo el anfitrión.
+echo 'net.ipv4.ip_nonlocal_bind=1' > /etc/sysctl.d/90-vesper-docker.conf
+sysctl --system >/dev/null
 systemctl daemon-reload
 systemctl enable docker
 systemctl restart docker

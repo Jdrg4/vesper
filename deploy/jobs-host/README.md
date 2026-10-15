@@ -6,6 +6,8 @@ Es un anfitrión **separado** del backend: el worker le habla a su Docker por TC
 ## Qué hace `setup.sh`
 
 - Instala Docker y `iptables-persistent` si faltan.
+- Activa `net.ipv4.ip_nonlocal_bind=1` para que `dockerd` arranque aunque la IP donde escucha
+  (Tailscale/DHCP) aún no exista al arrancar el sistema.
 - Genera una CA, un cert de servidor (SAN = las IPs que le pasas) y un cert de cliente.
 - Configura `dockerd` con `tlsverify` escuchando en `tcp://<ip>:2376` solo en las IPs que le pasas (`/etc/docker/daemon.json` +
   override de systemd que quita `-H fd://`) y DNS públicos (`1.1.1.1`, `9.9.9.9`) para los
@@ -36,21 +38,24 @@ no distingue bloqueado de inexistente.
 LAN=<ip-de-un-equipo-de-la-LAN-que-responda>
 HOST=<ip-del-anfitrión>
 
-# 1. LAN: responde desde el anfitrión y NO desde un contenedor
+# 1. LAN
 curl -m3 -sI http://$LAN                                                        # debe responder
-docker run --rm --network vesper-jobs vesper-agent:1 curl -m3 -sI http://$LAN   # debe fallar
+docker run --rm --network vesper-jobs vesper-agent:1 curl -m3 -sI http://$LAN   # debe fallar por timeout
 
-# 2. Anfitrión: el contenedor no alcanza sus propios servicios (p. ej. el 2376)
-docker run --rm --network vesper-jobs vesper-agent:1 curl -m3 -sk https://$HOST:2376   # debe fallar
+# 2. Anfitrión (TCP crudo al 2376: con tlsverify un curl falla siempre, no sirve de control)
+timeout 3 bash -c "</dev/tcp/$HOST/2376" && echo abierto                        # debe responder "abierto"
+docker run --rm --network vesper-jobs vesper-agent:1   timeout 3 bash -c "</dev/tcp/$HOST/2376" && echo abierto                      # debe fallar por timeout (sin "abierto")
 
-# 3. Entre contenedores (otro tenant): debe fallar
-docker run -d --rm --name a --network vesper-jobs vesper-agent:1 sleep 60
-A=$(docker inspect -f '{{.NetworkSettings.Networks.vesper-jobs.IPAddress}}' a)
-docker run --rm --network vesper-jobs vesper-agent:1 curl -m3 -s http://$A      # debe fallar
+# 3. Entre contenedores (otro tenant): `a` sí escucha en el 8000
+docker run -d --rm --name a --network vesper-jobs vesper-agent:1 python3 -m http.server 8000
+sleep 2
+A=$(docker inspect -f '{{(index .NetworkSettings.Networks "vesper-jobs").IPAddress}}' a)
+curl -m3 -sI http://$A:8000                                                     # debe responder
+docker run --rm --network vesper-jobs vesper-agent:1 curl -m3 -sI http://$A:8000   # debe fallar por timeout
 docker rm -f a
 
-# 4. Internet y DNS: debe funcionar
-docker run --rm --network vesper-jobs vesper-agent:1 curl -m5 -sI https://pypi.org
+# 4. Internet y DNS
+docker run --rm --network vesper-jobs vesper-agent:1 curl -m5 -sI https://pypi.org   # debe responder
 ```
 
 Si algún "debe fallar" responde, revisa `iptables -S DOCKER-USER` e `iptables -S INPUT`.
