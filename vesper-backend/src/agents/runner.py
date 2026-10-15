@@ -99,7 +99,12 @@ class OpencodeRunner:
     """
 
     def __init__(
-        self, workdir: str, port: int, env_overrides: dict[str, str] | None = None
+        self,
+        workdir: str,
+        port: int,
+        env_overrides: dict[str, str] | None = None,
+        *,
+        host: str = OPENCODE_HOST,
     ) -> None:
         self.workdir = workdir
         self.port = port
@@ -108,7 +113,7 @@ class OpencodeRunner:
         # quien levanto el backend.
         self.env_overrides = env_overrides or {}
         self.process: asyncio.subprocess.Process | None = None
-        self._base_url = f"http://{OPENCODE_HOST}:{port}"
+        self._base_url = f"http://{host}:{port}"
         # Password unico por job. Sin el, `opencode serve` queda abierto y
         # `GET /config/providers` devuelve las API keys en claro a cualquiera
         # que alcance el puerto — incluido el codigo del repo del tenant, que
