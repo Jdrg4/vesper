@@ -15,9 +15,10 @@ paths:
 | F1 Fundación/DevEx | ✅ | CI, pre-commit, `.claude/`, `.mcp.json`. |
 | F2 Auth + multi-tenancy | ✅ | JWT, RBAC, `tenant_scoped_query`, seed de usuarios. |
 | F3 GitHub App | ✅ **Verificado con una App real** | Instalación **con verificación OAuth de propiedad**, enrollment, sync (42 repos reales). |
-| F4 Agent runner | ✅ **Cerrada punta a punta** · ⚠️ **la sustituye F6** | Job real completo: clone con installation token → `opencode serve` → glm-5.2 → diff por git → validación → push → **PR abierto por el bot** ([vesper-testbed#2](https://github.com/Jdrg4/vesper-testbed/pull/2)). El runtime opencode se retira en F6a; todo lo demás del flujo se conserva. |
+| F4 Agent runner | ✅ **Cerrada punta a punta** | Job real completo: clone con installation token → `opencode serve` → modelo del tenant → diff por git → validación → push → **PR abierto por el bot**. `opencode` se queda como primer harness (F6 lo pone detrás de una interfaz). En producción: PRs reales con `deepseek-v4-pro`. |
 | F5 Triggers | ✅ **Validada punta a punta** | Los 4 disparos + cola Arq con worker aparte. Verificado contra `vesper-testbed` con payloads firmados de verdad: webhook → job `trigger=webhook`, debounce, anti-bucle, cron que avanza `next_run_at` sin duplicar, prompt libre y UI de reglas. |
-| **F6 Motor de agente propio** | 🔨 **En curso — spec aprobada** | Sustituye a opencode. **F6a** núcleo (cliente de proveedores, bucle de tool-calling, herramientas de archivo, contexto, evals) → **F6b** entorno de desarrollo containerizado (bash, tests, Playwright) → **F6c** convenciones y skills. |
-| F7 Reviewer · F8 PWA · F9 Deploy | ⬜ | Después de F6. |
+| **F6 Motor del agente** | 🔨 **Replanteada el 2026-10-15** | **Ya no se construye un motor propio.** Harness intercambiable detrás de una interfaz de motor (`opencode` primero, ya en producción); el esfuerzo va al **contenedor por job** que corre tests y Playwright (PRs verificados y aislamiento entre tenants) y a **evals** para comparar harnesses (`pi`, DeepSeek Harness) con datos. La spec del 2026-08-04 queda superada en lo del motor propio; pendiente la spec revisada. |
+| F9 Deploy | ✅ **En producción desde el 2026-10-15** | Compose único (backend, worker, frontend, Postgres, Redis), auto-deploy por webhook verificado, registro cerrado salvo la primera cuenta. Detalle en `produccion-deploy.md`. |
+| F7 Reviewer · F8 PWA | ⬜ | Después de F6. La interfaz ya se rediseñó (ver `vesper-frontend/DESIGN.md`). |
 
 Detalle por fases en [docs/superpowers/specs/](docs/superpowers/specs/).

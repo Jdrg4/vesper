@@ -32,14 +32,15 @@ Conceptos:
 - **Multi-agente reviewer** (F7): un segundo modelo revisa el PR recién creado.
 - **4 triggers** (F5): cron + webhook de GitHub + disparo manual + prompt libre desde la UI.
 
-> ### 🔄 F6: Vesper pasa a ser el agente
-> Vesper deja de orquestar `opencode`: bucle propio de tool-calling contra la API del
-> proveedor (open-weight primero), herramientas propias sobre el workspace, y ejecución en un
+> ### 🔄 F6: harness intercambiable y PRs verificados (replanteada el 2026-10-15)
+> Vesper **no** construye su propio bucle de agente: usa un harness maduro (`opencode`
+> hoy) detrás de una interfaz de motor, para poder probar otros (`pi`, DeepSeek Harness) y
+> elegir con evals, no a ojo. El esfuerzo de F6 va a lo que ningún harness resuelve: un
 > **entorno de desarrollo containerizado por job** —donde el agente instala dependencias,
-> levanta la BD, corre la suite y Playwright— para que el PR salga verificado, no solo
-> plausible. Lo escrito sobre `opencode serve`, el pool de puertos 14096+ y el sandbox
-> `XDG_*` **describe el código actual, que F6 sustituye**. Diseño:
-> [docs/superpowers/specs/2026-08-04-f6-motor-de-agente-propio-design.md](docs/superpowers/specs/2026-08-04-f6-motor-de-agente-propio-design.md).
+> levanta la BD, corre la suite y Playwright— para que el PR salga verificado y cada tenant
+> quede aislado. La spec del 2026-08-04
+> ([motor propio](docs/superpowers/specs/2026-08-04-f6-motor-de-agente-propio-design.md))
+> queda superada en lo del bucle propio; sus partes de contenedor y evals siguen vigentes.
 
 **Estado por fase (F1-F9)**: `.claude/rules/roadmap-fases.md`. Hoy: F1-F5 cerradas; **F6 en
 curso**; F7 reviewer, F8 PWA y F9 deploy pendientes. Las decisiones de diseño de cada fase
