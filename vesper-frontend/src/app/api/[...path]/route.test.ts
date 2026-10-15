@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { POST, PUT } from "./route";
+import { GET, POST, PUT } from "./route";
 
 const ORIGIN = "http://localhost:3000";
 
@@ -102,5 +102,27 @@ describe("proxy /api/[...path]", () => {
     expect(url).toContain("/api/v1/agents/credentials");
     expect(init.method).toBe("PUT");
     expect(res.status).toBe(201);
+  });
+
+  it("pasa un SSE en vivo, sin esperar a que el backend cierre el stream", async () => {
+    // Con `res.text()` el navegador no veia nada hasta que el backend cerraba,
+    // minutos despues: la actividad del agente llegaba toda junta al final.
+    let push!: (chunk: string) => void;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (chunk) => controller.enqueue(new TextEncoder().encode(chunk));
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } })),
+    );
+
+    const res = await GET(new NextRequest(new URL("/api/jobs/j1/events", ORIGIN)));
+    expect(res.headers.get("content-type")).toBe("text/event-stream");
+    const reader = res.body!.getReader();
+    push('data: {"event":"activity"}\n\n');
+    const { value } = await reader.read();
+    expect(new TextDecoder().decode(value)).toContain('"activity"');
   });
 });

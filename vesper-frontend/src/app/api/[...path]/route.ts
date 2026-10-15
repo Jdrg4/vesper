@@ -59,6 +59,16 @@ async function proxy(request: NextRequest) {
     body,
   });
 
+  // SSE (progreso del agente): se pasa el stream tal cual. Con `res.text()` el
+  // navegador no recibia nada hasta que el backend cerraba, minutos despues.
+  const contentType = res.headers.get("content-type") ?? "application/json";
+  if (contentType.startsWith("text/event-stream")) {
+    return new Response(res.body, {
+      status: res.status,
+      headers: { "Content-Type": contentType, "Cache-Control": "no-cache, no-transform" },
+    });
+  }
+
   const resBody = await res.text();
 
   // 204/205/304 son "null body status": el constructor de Response lanza si les
