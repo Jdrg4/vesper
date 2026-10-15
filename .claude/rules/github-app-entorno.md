@@ -58,6 +58,12 @@ mínimos: `contents:write`, `pull_requests:write`, `metadata:read`.
 
 ## Deuda conocida de este tema
 
+- **El sync deja de vigilar lo que GitHub no devuelve** (repo borrado o fuera de la
+  instalación). Si la instalación cambia *mientras* se pagina, el corte por offset
+  puede saltarse un repo válido y des-enrolarlo (se reactiva a mano). Arreglo si
+  molesta: comparar `len(repos)` con el `total_count` de GitHub y no des-enrolar si
+  no cuadran.
+
 - **La App de pruebas está instalada en los 42 repos de la cuenta.** Solo se
   toca lo que esté *enrolado*, pero la App tiene `contents:write` sobre todos.
   Conviene reducir la instalación a los repos que de verdad se vigilen.
