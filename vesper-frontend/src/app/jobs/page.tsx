@@ -1,187 +1,275 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AppNav } from "@/components/app-nav";
+import { PanelLeft, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { AppShell } from "@/components/app-shell";
+import { JobComposer } from "@/components/jobs/job-composer";
+import { JobList } from "@/components/jobs/job-list";
+import { JobThread } from "@/components/jobs/job-thread";
+import { BrandMark } from "@/components/ui/brand-mark";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { api } from "@/lib/api";
+import { type Job, jobStatus, TASKS, taskLabel } from "@/lib/jobs";
 
-const MAX_PROMPT = 4000;
-
-interface Job {
-  id: string; repository_id: string; task_type: string; status: string;
-  trigger: string;
-  ref: string; model: string; pull_request_url: string | null;
-  diff_summary: string | null; error_message: { error: string } | null;
-  started_at: string | null; completed_at: string | null;
-  created_at: string;
+interface Repo {
+  id: string;
+  full_name: string;
+  is_enrolled: boolean;
 }
 
-const TRIGGER_LABELS: Record<string, string> = {
-  cron: "programado",
-  webhook: "push",
-  manual: "manual",
-  prompt: "prompt",
-};
+const POLL_MS = 5000;
+const STALE = "Se perdió la conexión o la sesión: los estados pueden estar desactualizados.";
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [repos, setRepos] = useState<Repo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [repoId, setRepoId] = useState("");
   const [taskType, setTaskType] = useState("security");
-  const [repos, setRepos] = useState<{ id: string; full_name: string }[]>([]);
-  const [prompt, setPrompt] = useState("");
-  const [showPrompt, setShowPrompt] = useState(false);
-  const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [drawer, setDrawer] = useState(false);
+  // Varias cargas pueden solaparse (refresco automatico, lanzar, detener): solo
+  // vale la ultima pedida, o una respuesta vieja borraria el job recien lanzado.
+  const seq = useRef(0);
+  const historyButton = useRef<HTMLButtonElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+
+  const loadJobs = useCallback(async () => {
+    const mine = ++seq.current;
+    const r = await api.get<Job[]>("/jobs");
+    if (mine === seq.current) setJobs(r.data ?? []);
+  }, []);
 
   useEffect(() => {
-    Promise.all([api.get("/jobs"), api.get("/repositories?enrolled=true")])
-      .then(([j, r]) => { setJobs(j.data ?? []); setRepos(r.data ?? []); })
-      // Antes se tragaba el error: un 401 se veia como "no hay jobs" y un
-      // workspace lleno parecia vacio.
+    const mine = ++seq.current;
+    Promise.all([api.get<Job[]>("/jobs"), api.get<Repo[]>("/repositories")])
+      .then(([j, r]) => {
+        if (mine === seq.current) setJobs(j.data ?? []);
+        setRepos(r.data ?? []);
+        // Con un solo repo vigilado no hay nada que elegir.
+        const watched = (r.data ?? []).filter((x) => x.is_enrolled);
+        if (watched.length === 1) setRepoId(watched[0].id);
+        // El panel enlaza a /jobs?job=<id> para abrir ese job directamente.
+        const wanted = new URLSearchParams(window.location.search).get("job");
+        if (wanted) setActiveId(wanted);
+      })
+      // Un 401 tragado se veia como "no hay jobs": se dice lo que pasa.
       .catch(() => setError("No se pudieron cargar los jobs. ¿Sigue abierta la sesión?"))
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleTrigger() {
-    if (!repoId) return;
+  // Mientras algo corre, la pantalla se refresca sola. Si el refresco falla se dice:
+  // si no, un job terminado se quedaria "Trabajando" para siempre.
+  const anyActive = jobs.some((j) => jobStatus(j.status).active);
+  useEffect(() => {
+    if (!anyActive) return;
+    const t = setInterval(() => {
+      loadJobs()
+        .then(() => setError((e) => (e === STALE ? "" : e)))
+        .catch(() => setError(STALE));
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, [anyActive, loadJobs]);
+
+  // Cajon movil: el foco entra al abrirlo, Escape lo cierra y el foco vuelve al boton.
+  useEffect(() => {
+    if (!drawer) return;
+    const back = historyButton.current;
+    closeButton.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setDrawer(false);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      back?.focus();
+    };
+  }, [drawer]);
+
+  const repoNames = useMemo(() => Object.fromEntries(repos.map((r) => [r.id, r.full_name])), [repos]);
+  const enrolled = repos.filter((r) => r.is_enrolled);
+  const active = jobs.find((j) => j.id === activeId) ?? null;
+
+  async function launch(prompt: string | null): Promise<boolean> {
+    if (!repoId) return false;
     setSending(true);
     setError("");
+    let created: Job;
     try {
-      await api.post("/jobs", {
-        repository_id: repoId,
-        task_type: taskType,
-        // Sin texto se manda `null` y el backend usa la plantilla del task_type.
-        prompt: showPrompt && prompt.trim() ? prompt.trim() : null,
-      });
-      setPrompt("");
-      const r = await api.get("/jobs");
-      setJobs(r.data ?? []);
+      created = (await api.post<Job>("/jobs", { repository_id: repoId, task_type: taskType, prompt })).data;
     } catch (e) {
       const status = (e as { response?: { status?: number } }).response?.status;
       setError(
-        status === 429
-          ? "Has alcanzado el límite de jobs diarios de tu plan."
-          : "No se pudo lanzar el job.",
+        status === 429 ? "Has alcanzado el límite de jobs diarios de tu plan." : "No se pudo lanzar el job.",
       );
-    } finally {
       setSending(false);
+      return false;
     }
+    // El job YA existe: aunque el refresco falle, no se dice "no se pudo lanzar"
+    // (el usuario reintentaria y gastaria cuota con un duplicado).
+    seq.current++;
+    setJobs((prev) => [created, ...prev.filter((j) => j.id !== created.id)]);
+    setActiveId(created.id);
+    setSending(false);
+    loadJobs().catch(() => setError(STALE));
+    return true;
   }
 
-  const statusColor = (s: string) => {
-    switch (s) {
-      case "completed": return "text-green-400";
-      case "failed": return "text-red-400";
-      case "running": return "text-blue-400";
-      case "needs_review": return "text-yellow-400";
-      default: return "text-muted-foreground";
+  async function abort(id: string) {
+    try {
+      await api.post(`/jobs/${id}/abort`);
+    } catch {
+      setError("No se pudo detener el job.");
     }
-  };
+    await loadJobs().catch(() => setError(STALE));
+  }
+
+  const list = (
+    <JobList
+      jobs={jobs}
+      repoNames={repoNames}
+      activeId={activeId}
+      loading={loading}
+      onSelect={(id) => {
+        setActiveId(id);
+        setDrawer(false);
+      }}
+      onNew={() => {
+        setActiveId(null);
+        setDrawer(false);
+      }}
+    />
+  );
 
   return (
-    <main className="min-h-screen p-8 max-w-3xl mx-auto">
-      <AppNav />
-      <h1 className="text-2xl font-semibold mb-6 mt-4">Jobs</h1>
+    <AppShell wide>
+      <div className="flex h-[calc(100dvh-10.5rem)] min-h-[28rem] overflow-hidden rounded-2xl border bg-card shadow-raised sm:h-[calc(100dvh-8.5rem)] sm:min-h-[32rem]">
+        <aside className="hidden w-72 shrink-0 overflow-y-auto border-r bg-secondary p-3 md:block">{list}</aside>
 
-      <div className="flex gap-3 mb-8 flex-wrap">
-        <select
-          value={repoId}
-          onChange={(e) => setRepoId(e.target.value)}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="">Seleccionar repo...</option>
-          {repos.map((r) => (
-            <option key={r.id} value={r.id}>{r.full_name}</option>
-          ))}
-        </select>
-        <select
-          value={taskType}
-          onChange={(e) => setTaskType(e.target.value)}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
-        >
-          <option value="security">Seguridad</option>
-          <option value="quality">Calidad</option>
-          <option value="deps">Deps</option>
-          <option value="perf">Performance</option>
-          <option value="docs">Docs</option>
-        </select>
-        <button
-          onClick={() => setShowPrompt((v) => !v)}
-          className="rounded-md border border-input px-4 py-2 text-sm"
-        >
-          {showPrompt ? "Usar plantilla" : "Prompt libre"}
-        </button>
-        <button
-          onClick={handleTrigger}
-          disabled={!repoId || sending}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        >
-          {sending ? "Lanzando..." : "Revisar"}
-        </button>
+        <section className="flex min-w-0 flex-1 flex-col">
+          <header className="flex items-center gap-2 border-b bg-card/80 px-3 py-2.5 backdrop-blur sm:px-6">
+            <Button
+              ref={historyButton}
+              variant="ghost"
+              size="icon"
+              className="-ml-1 h-8 w-8 md:hidden"
+              onClick={() => setDrawer(true)}
+              aria-label="Ver historial de jobs"
+              aria-expanded={drawer}
+            >
+              <PanelLeft />
+            </Button>
+            <BrandMark size="sm" />
+            <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
+              {active
+                ? `${taskLabel(active.task_type)} · ${repoNames[active.repository_id] ?? "Repo"}`
+                : "Nuevo job"}
+            </h1>
+            {active && <StatusBadge status={active.status} />}
+          </header>
+
+          <div className="min-h-0 flex-1 overflow-y-auto bg-background">
+            {error && (
+              <p role="alert" className="mx-auto mt-4 w-full max-w-3xl px-4 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            {active ? (
+              <JobThread job={active} repoName={repoNames[active.repository_id] ?? "Repo"} onAbort={abort} />
+            ) : (
+              <EmptyState hasRepos={enrolled.length > 0} onPick={setTaskType} taskType={taskType} />
+            )}
+          </div>
+
+          <div className="border-t bg-card px-3 pb-3 pt-3 sm:px-6 sm:pb-4">
+            <JobComposer
+              repos={enrolled}
+              repoId={repoId}
+              taskType={taskType}
+              onRepo={setRepoId}
+              onTask={setTaskType}
+              onSend={launch}
+              sending={sending}
+            />
+          </div>
+        </section>
       </div>
 
-      {showPrompt && (
-        <div className="mb-8">
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            maxLength={MAX_PROMPT}
-            rows={4}
-            placeholder="Migra este módulo a Pydantic v2 y actualiza los tests."
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+      {drawer && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-hidden
+            onClick={() => setDrawer(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
           />
-          <p className="mt-1 text-xs text-muted-foreground">
-            Sustituye a la plantilla de la tarea. La tarea elegida se conserva como
-            etiqueta. {prompt.length}/{MAX_PROMPT}
-          </p>
-        </div>
-      )}
-
-      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
-
-      {loading ? (
-        <p className="text-muted-foreground">Cargando...</p>
-      ) : jobs.length === 0 ? (
-        <p className="text-muted-foreground">No hay jobs. Selecciona un repo vigilado y haz click en Revisar.</p>
-      ) : (
-        <div className="space-y-3">
-          {jobs.map((job) => (
-            <div key={job.id} className="rounded-lg border p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{job.task_type}</span>
-                  <span className="rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    {TRIGGER_LABELS[job.trigger] ?? job.trigger}
-                  </span>
-                </div>
-                <span className={`text-sm font-medium ${statusColor(job.status)}`}>
-                  {job.status}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                ref: {job.ref} · model: {job.model}
-                {job.started_at && ` · started: ${new Date(job.started_at).toLocaleTimeString()}`}
-              </p>
-              {job.diff_summary && (
-                <p className="text-sm mt-2">{job.diff_summary}</p>
-              )}
-              {job.pull_request_url && (
-                <a
-                  href={job.pull_request_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-400 underline mt-1 inline-block"
-                >
-                  Ver PR
-                </a>
-              )}
-              {job.error_message && (
-                <p className="text-sm text-red-400 mt-1">{job.error_message.error}</p>
-              )}
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Historial de jobs"
+            className="absolute inset-y-0 left-0 flex w-[85%] max-w-xs flex-col overflow-y-auto border-r bg-secondary p-3 shadow-overlay"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-medium">Historial</h2>
+              <Button
+                ref={closeButton}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setDrawer(false)}
+                aria-label="Cerrar historial"
+              >
+                <X />
+              </Button>
             </div>
-          ))}
+            {list}
+          </aside>
         </div>
       )}
-    </main>
+    </AppShell>
+  );
+}
+
+function EmptyState({
+  hasRepos,
+  taskType,
+  onPick,
+}: {
+  hasRepos: boolean;
+  taskType: string;
+  onPick: (task: string) => void;
+}) {
+  return (
+    <div className="mx-auto flex h-full w-full max-w-3xl flex-col items-center justify-center gap-4 px-6 py-10 text-center">
+      <BrandMark size="lg" />
+      <div className="space-y-1">
+        <h2 className="text-2xl font-medium tracking-tight">¿Qué revisamos hoy?</h2>
+        <p className="text-sm text-muted-foreground">
+          {hasRepos
+            ? "Elige una tarea y un repo abajo. Vesper clona el código, hace el trabajo y te abre un PR."
+            : "Primero marca algún repo como vigilado en Repositorios."}
+        </p>
+      </div>
+      <div role="group" aria-label="Tarea" className="flex flex-wrap justify-center gap-2 pt-2">
+        {TASKS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            aria-pressed={taskType === t.value}
+            onClick={() => onPick(t.value)}
+            className={
+              taskType === t.value
+                ? "rounded-full border border-primary/50 bg-primary-soft px-3.5 py-2 text-sm font-medium text-primary shadow-raised"
+                : "rounded-full border bg-card px-3.5 py-2 text-sm text-ink-2 shadow-raised transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground"
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

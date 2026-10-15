@@ -20,6 +20,12 @@ vi.mock("sonner", () => ({ toast: toastMock }));
 // next/link (App Router) puede requerir el contexto del router al montarse
 // fuera de una navegacion real de Next. Se sustituye por un <a> simple: la
 // pagina solo lo usa para navegacion, no hay nada que probar ahi.
+// La pagina va dentro de AppShell, que usa el router del App Router.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => "/settings",
+}));
+
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...props}>

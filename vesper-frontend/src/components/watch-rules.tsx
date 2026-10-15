@@ -109,7 +109,7 @@ export function WatchRules({ repositoryId, defaultBranch }: Props) {
 
   return (
     <div className="space-y-2">
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
       {TASK_TYPES.map(({ value, label }) => {
         const rule = rules.find((r) => r.task_type === value);
@@ -119,13 +119,13 @@ export function WatchRules({ repositoryId, defaultBranch }: Props) {
           return (
             <div
               key={value}
-              className="flex items-center justify-between rounded-md border border-dashed px-3 py-2"
+              className="flex items-center justify-between rounded-lg border border-dashed px-3 py-2"
             >
               <span className="text-sm text-muted-foreground">{label}</span>
               <button
                 onClick={() => crear(value)}
                 disabled={ocupado}
-                className="text-xs underline disabled:opacity-50"
+                className="text-xs font-medium text-primary hover:underline disabled:opacity-50"
               >
                 {/* "Activar" y no "Vigilar": en esta misma pantalla "Vigilar"
                     ya significa enrolar un repo, que es otra cosa. */}
@@ -138,7 +138,7 @@ export function WatchRules({ repositoryId, defaultBranch }: Props) {
         return (
           <div
             key={value}
-            className={`rounded-md border px-3 py-2 ${rule.enabled ? "" : "opacity-60"}`}
+            className={`rounded-lg border bg-card px-3 py-2.5 ${rule.enabled ? "" : "opacity-60"}`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium">{label}</span>
@@ -146,6 +146,7 @@ export function WatchRules({ repositoryId, defaultBranch }: Props) {
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
+                    className="accent-[var(--primary)]"
                     checked={rule.on_push}
                     disabled={ocupado}
                     onChange={(e) => actualizar(rule, { on_push: e.target.checked })}
@@ -155,6 +156,7 @@ export function WatchRules({ repositoryId, defaultBranch }: Props) {
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <input
                     type="checkbox"
+                    className="accent-[var(--primary)]"
                     checked={rule.enabled}
                     disabled={ocupado}
                     onChange={(e) => actualizar(rule, { enabled: e.target.checked })}
@@ -176,7 +178,7 @@ export function WatchRules({ repositoryId, defaultBranch }: Props) {
                 value={presetFromCron(rule.cron)}
                 disabled={ocupado}
                 onChange={(e) => cambiarCadencia(rule, e.target.value as CronPreset)}
-                className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                className="h-8 rounded-lg border border-input bg-card px-2 text-xs focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
                 {(Object.keys(CRON_PRESET_LABELS) as CronPreset[]).map((p) => (
                   <option key={p} value={p}>

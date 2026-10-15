@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { taskLabel } from "@/lib/jobs";
 
 // Reglas de vigilancia de un repo (F5). Una regla = repo x tarea, con cadencia
 // cron y/o disparo en push.
@@ -18,13 +19,10 @@ export const watchRuleSchema = z.object({
 export type WatchRule = z.infer<typeof watchRuleSchema>;
 export type TaskType = WatchRule["task_type"];
 
-export const TASK_TYPES: { value: TaskType; label: string }[] = [
-  { value: "security", label: "Seguridad" },
-  { value: "quality", label: "Calidad" },
-  { value: "deps", label: "Dependencias" },
-  { value: "perf", label: "Performance" },
-  { value: "docs", label: "Documentación" },
-];
+// Las etiquetas salen del vocabulario comun (`lib/jobs`): una sola fuente para toda la app.
+export const TASK_TYPES: { value: TaskType; label: string }[] = (
+  ["security", "quality", "deps", "perf", "docs"] as const
+).map((value) => ({ value, label: taskLabel(value) }));
 
 // Presets de cadencia. Pedirle una expresion cron a un usuario es una trampa;
 // la expresion cruda sigue disponible como "personalizado". Las horas son UTC

@@ -3,43 +3,100 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Sistema de color de Vesper. Toma el lenguaje del asistente de Matriarca (neutros
+ * frios, primario indigo) y le anade la marca propia: `--star`, el dorado de la
+ * "estrella de la tarde" del banner. Los tokens se nombran por su TRABAJO, no por
+ * su color. El contraste de cada par lo vigila `src/lib/contraste-tokens.test.ts`,
+ * que lee este archivo: cambiar un valor sin pasar el test rompe la CI.
+ *
+ * Los valores van en hex a proposito: el test los parsea.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
   --radius: 0.625rem;
+
+  /* Superficies: lienzo gris, tarjetas blancas, columna lateral un tono mas oscura. */
+  --background: #f7f8fa;
+  --card: #ffffff;
+  --card-foreground: #16181d;
+  --popover: #ffffff;
+  --popover-foreground: #16181d;
+  --muted: #f0f1f4;
+  --secondary: #f0f1f4;
+  --secondary-foreground: #16181d;
+
+  /* Texto en tres niveles. */
+  --foreground: #16181d;
+  --muted-foreground: #5c6270;
+  --ink-2: #5c6270;
+  --ink-3: #636874;
+
+  /* Accion. */
+  --primary: #4a5be8;
+  --primary-foreground: #ffffff;
+  --primary-hover: #3948c9;
+  --primary-soft: #eceefd;
+  --ring: #4a5be8;
+
+  /* Marca: solo decora (degradado del avatar del agente, logotipo). Nunca un estado. */
+  --star: #b8720a;
+
+  /* Bordes: el divisor decora (sin umbral); el de un campo es un contorno (3:1). */
+  --border: #e3e5ea;
+  --border-strong: #cdd1d9;
+  --input: #8c8f97;
+
+  /* Estados de un job. */
+  --success: #127e4c;
+  --success-soft: #e3f5ec;
+  --warning: #916706;
+  --warning-soft: #fcf3dc;
+  --destructive: #c7372c;
+  --destructive-soft: #fdebe9;
+  --destructive-foreground: #ffffff;
+
+  --shadow-raised: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-overlay: 0 4px 6px -2px rgba(16, 24, 40, 0.06), 0 12px 24px -4px rgba(16, 24, 40, 0.12);
 }
 
+/* En oscuro la elevacion se marca con contraste de superficie, no con sombra. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --background: #16161a;
+  --card: #1d1d22;
+  --card-foreground: #ededf2;
+  --popover: #26262c;
+  --popover-foreground: #ededf2;
+  --muted: #2e2e36;
+  --secondary: #222228;
+  --secondary-foreground: #ededf2;
+
+  --foreground: #ededf2;
+  --muted-foreground: #9b9ba8;
+  --ink-2: #9b9ba8;
+  --ink-3: #8d8d99;
+
+  --primary: #6e7fff;
+  --primary-foreground: #12121a;
+  --primary-hover: #8290ff;
+  --primary-soft: #1e2138;
+  --ring: #6e7fff;
+
+  --star: #f5b14c;
+
+  --border: #2f2f37;
+  --border-strong: #3e3e48;
+  --input: #686871;
+
+  --success: #4bce97;
+  --success-soft: #16302a;
+  --warning: #e2b203;
+  --warning-soft: #33290b;
+  --destructive: #f87168;
+  --destructive-soft: #3a1d1c;
+  --destructive-foreground: #16161a;
+
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-overlay: 0 12px 32px -4px rgba(0, 0, 0, 0.5);
 }
 
 @theme inline {
@@ -47,22 +104,39 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-star: var(--star);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
   --color-destructive: var(--destructive);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-overlay: var(--shadow-overlay);
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @layer base {
@@ -72,5 +146,12 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-feature-settings: "cv11", "ss01";
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 }

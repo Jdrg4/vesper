@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AppNav } from "@/components/app-nav";
+import { AppShell } from "@/components/app-shell";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input, Label, Select } from "@/components/ui/field";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -174,33 +177,42 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground">Cargando...</p>
-      </main>
+      <AppShell>
+        <div className="mx-auto max-w-3xl space-y-3">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-40 animate-pulse rounded-xl bg-muted" />
+          ))}
+        </div>
+      </AppShell>
     );
   }
 
   if (loadError) {
     return (
-      <main className="min-h-screen p-8">
-        <h1 className="text-2xl font-semibold mb-4">Ajustes</h1>
-        <p className="text-muted-foreground mb-4">{loadError}</p>
-        <Link href="/login" className="underline">
-          Ir al login
-        </Link>
-      </main>
+      <AppShell>
+        <Card className="mx-auto max-w-3xl p-8 text-center">
+          <h1 className="mb-2 text-2xl font-semibold">Ajustes</h1>
+          <p className="mb-4 text-muted-foreground">{loadError}</p>
+          <Link href="/login" className="text-primary underline">
+            Ir al login
+          </Link>
+        </Card>
+      </AppShell>
     );
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-3xl mx-auto space-y-10">
-      <div className="space-y-4">
-        <AppNav />
-        <h1 className="text-2xl font-semibold">Ajustes</h1>
+    <AppShell>
+      <div className="mx-auto max-w-3xl space-y-8">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
+        <p className="text-sm text-muted-foreground">
+          Las keys de tu proveedor de IA y los modelos que usa el agente.
+        </p>
       </div>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Credenciales de IA</h2>
+        <h2 className="text-base font-semibold">Credenciales de IA</h2>
         <p className="text-sm text-muted-foreground">
           Vesper corre los jobs con la API key de tu propio proveedor (BYOK). La key nunca se
           vuelve a mostrar tras guardarla.
@@ -211,11 +223,8 @@ export default function SettingsPage() {
         ) : (
           <div className="space-y-2">
             {credentials.map((cred) => (
-              <div
-                key={cred.id}
-                className="flex items-center justify-between rounded-lg border p-3"
-              >
-                <div>
+              <Card key={cred.id} className="flex items-center justify-between gap-3 p-4">
+                <div className="min-w-0">
                   <p className="font-medium">{providerName(cred.provider_id)}</p>
                   <p className="text-xs text-muted-foreground">
                     {`${cred.label ? `${cred.label} · ` : ""}••••${cred.key_hint}`}
@@ -230,29 +239,24 @@ export default function SettingsPage() {
                   (confirmDeleteId === cred.provider_id ? (
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground">¿Eliminar?</span>
-                      <button
+                      <Button
+                        variant="destructive"
+                        size="sm"
                         onClick={() => handleDeleteCredential(cred.provider_id)}
                         disabled={deletingId === cred.provider_id}
-                        className="text-xs font-medium text-destructive underline disabled:opacity-50"
                       >
                         {deletingId === cred.provider_id ? "Eliminando..." : "Sí"}
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(null)}
-                        className="text-xs text-muted-foreground underline"
-                      >
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(null)}>
                         Cancelar
-                      </button>
+                      </Button>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => setConfirmDeleteId(cred.provider_id)}
-                      className="text-xs text-muted-foreground underline"
-                    >
+                    <Button variant="ghost" size="sm" onClick={() => setConfirmDeleteId(cred.provider_id)}>
                       Eliminar
-                    </button>
+                    </Button>
                   ))}
-              </div>
+              </Card>
             ))}
           </div>
         )}
@@ -260,120 +264,95 @@ export default function SettingsPage() {
         {isAdmin && (
           <form
             onSubmit={handleSubmit(onAddCredential)}
-            className="space-y-3 rounded-lg border p-4"
+            className="space-y-4 rounded-xl border bg-card p-5 shadow-raised"
           >
-            <h3 className="text-sm font-medium">Añadir credencial</h3>
+            <h3 className="text-sm font-semibold">Añadir credencial</h3>
             <div className="space-y-2">
-              <label htmlFor="provider_id" className="text-sm font-medium">
+              <Label htmlFor="provider_id">
                 Proveedor
-              </label>
-              <select
-                id="provider_id"
-                {...register("provider_id")}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              >
+              </Label>
+              <Select id="provider_id" {...register("provider_id")}>
                 <option value="">Seleccionar proveedor...</option>
                 {sortedProviders.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Select>
               {errors.provider_id && (
                 <p className="text-xs text-destructive">{errors.provider_id.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <label htmlFor="api_key" className="text-sm font-medium">
+              <Label htmlFor="api_key">
                 API key
-              </label>
-              <input
-                id="api_key"
-                type="password"
-                autoComplete="off"
-                {...register("api_key")}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
+              </Label>
+              <Input id="api_key" type="password" autoComplete="off" {...register("api_key")} />
               {errors.api_key && (
                 <p className="text-xs text-destructive">{errors.api_key.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <label htmlFor="label" className="text-sm font-medium">
+              <Label htmlFor="label">
                 Etiqueta (opcional)
-              </label>
-              <input
-                id="label"
-                type="text"
-                {...register("label")}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              />
+              </Label>
+              <Input id="label" type="text" {...register("label")} />
               {errors.label && <p className="text-xs text-destructive">{errors.label.message}</p>}
             </div>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-            >
+            <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Guardando..." : "Añadir credencial"}
-            </button>
+            </Button>
           </form>
         )}
       </section>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Modelos</h2>
+        <h2 className="text-base font-semibold">Modelos</h2>
 
         {configuredProviders.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Añade primero una API key arriba para poder elegir los modelos que usa Vesper.
           </p>
         ) : (
-          <div className="space-y-4 rounded-lg border p-4">
+          <div className="space-y-4 rounded-xl border bg-card p-5 shadow-raised">
             <div className="space-y-2">
-              <label htmlFor="developer_model" className="text-sm font-medium">
+              <Label htmlFor="developer_model">
                 Modelo desarrollador
-              </label>
-              <select
+              </Label>
+              <Select
                 id="developer_model"
                 value={developerModel}
                 onChange={(e) => setDeveloperModel(e.target.value)}
                 disabled={!isAdmin}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
               >
                 {withCurrentValue(modelOptions, developerModel).map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="space-y-2">
-              <label htmlFor="reviewer_model" className="text-sm font-medium">
+              <Label htmlFor="reviewer_model">
                 Modelo revisor
-              </label>
-              <select
+              </Label>
+              <Select
                 id="reviewer_model"
                 value={reviewerModel}
                 onChange={(e) => setReviewerModel(e.target.value)}
                 disabled={!isAdmin}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
               >
                 {withCurrentValue(modelOptions, reviewerModel).map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             {isAdmin ? (
-              <button
-                onClick={handleSaveModels}
-                disabled={savingModels}
-                className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-              >
+              <Button onClick={handleSaveModels} disabled={savingModels}>
                 {savingModels ? "Guardando..." : "Guardar modelos"}
-              </button>
+              </Button>
             ) : (
               <p className="text-xs text-muted-foreground">
                 Solo un administrador del workspace puede cambiar esto.
@@ -388,6 +367,7 @@ export default function SettingsPage() {
           Workspace: {tenant.name} · Plan: {tenant.plan}
         </p>
       )}
-    </main>
+      </div>
+    </AppShell>
   );
 }

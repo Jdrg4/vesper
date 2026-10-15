@@ -43,7 +43,17 @@ lleva `suppressHydrationWarning` porque next-themes reescribe `className` y
 `color-scheme` antes de hidratar.
 
 
+**Sistema de diseño:** las decisiones y su porqué están en `vesper-frontend/DESIGN.md`. Los
+tokens viven en `app/globals.css` (hex, a propósito) y `src/lib/contraste-tokens.test.ts` los
+lee para comprobar el contraste: un token nuevo de texto o de contorno va también a sus pares.
+Botones, campos, tarjetas y badges salen de `components/ui/`; estados, tareas y disparadores de
+un job, de `lib/jobs.ts` (no se copian etiquetas ni colores en otra parte).
+
 ## Trampas conocidas de este tema
+
+- **El icono o el texto que depende del tema no se decide en React.** El servidor no conoce el
+  tema; pintar según `resolvedTheme` rompe la hidratación y React regenera la página entera.
+  Renderiza las dos variantes y deja que `dark:` elija.
 
 - **`getByRole("button", {name})` de Playwright casa por substring.** Con los
   textos de `/repositories`, un `name: "Vigilar"` casa también con **"Dejar de

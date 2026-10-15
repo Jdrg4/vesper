@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
+import { AuthLayout } from "@/components/auth-layout";
+import { Button } from "@/components/ui/button";
+import { Input, Label } from "@/components/ui/field";
 import { api } from "@/lib/api";
 
 export default function RegisterPage() {
@@ -45,36 +48,39 @@ export default function RegisterPage() {
   ];
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <h1 className="text-2xl font-semibold">Crear cuenta</h1>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+    <AuthLayout>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Crear cuenta</h1>
+          <p className="text-sm text-muted-foreground">Crea tu workspace y conecta tus repos.</p>
+        </div>
+        {error && (
+          <p role="alert" className="rounded-lg bg-destructive-soft px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         {fields.map((f) => (
           <div key={f.name} className="space-y-2">
-            <label htmlFor={f.name} className="text-sm font-medium">{f.label}</label>
-            <input
+            <Label htmlFor={f.name}>{f.label}</Label>
+            <Input
               id={f.name}
               name={f.name}
               type={f.type}
               required
               value={(form as Record<string, string>)[f.name]}
               onChange={onChange}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              minLength={f.minLength}
             />
           </div>
         ))}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        >
+        <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Creando..." : "Crear cuenta"}
-        </button>
+        </Button>
         <p className="text-center text-sm text-muted-foreground">
           ¿Ya tienes cuenta?{" "}
-          <Link href="/login" className="underline underline-offset-4">Iniciar sesión</Link>
+          <Link href="/login" className="text-primary hover:underline">Iniciar sesión</Link>
         </p>
       </form>
-    </main>
+    </AuthLayout>
   );
 }

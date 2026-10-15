@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
+import { AuthLayout } from "@/components/auth-layout";
+import { Button } from "@/components/ui/button";
+import { Input, Label } from "@/components/ui/field";
 import { api } from "@/lib/api";
 import { safeNextPath } from "@/lib/safe-next";
 
@@ -34,44 +37,47 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <h1 className="text-2xl font-semibold">Iniciar sesión</h1>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+    <AuthLayout>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Iniciar sesión</h1>
+          <p className="text-sm text-muted-foreground">Entra para ver qué ha hecho el agente.</p>
+        </div>
+        {error && (
+          <p role="alert" className="rounded-lg bg-destructive-soft px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium">Email</label>
-          <input
+          <Label htmlFor="email">Email</Label>
+          <Input
             id="email"
             type="email"
+            autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
         <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium">Contraseña</label>
-          <input
+          <Label htmlFor="password">Contraseña</Label>
+          <Input
             id="password"
             type="password"
+            autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-        >
+        <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Entrando..." : "Entrar"}
-        </button>
+        </Button>
         <p className="text-center text-sm text-muted-foreground">
           ¿No tienes cuenta?{" "}
-          <Link href="/register" className="underline underline-offset-4">Registrarse</Link>
+          <Link href="/register" className="text-primary hover:underline">Registrarse</Link>
         </p>
       </form>
-    </main>
+    </AuthLayout>
   );
 }
