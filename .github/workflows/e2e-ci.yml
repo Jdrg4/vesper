@@ -1,0 +1,118 @@
+# Workflow: E2E Playwright orquestando backend + frontend + Postgres reales.
+# F1: sin specs todavía (continue-on-error hasta que aterricen los de F2).
+# `playwright.config.ts` (`testDir: "./e2e"`) levanta el FRONTEND vía su
+# `webServer` (`pnpm dev`); este workflow solo deja el BACKEND arriba de
+# antemano. Cuando existan specs `f2-login.spec.ts`, etc., se recogen solos.
+name: E2E CI
+
+on:
+  # Permite relanzar el gate a mano (util cuando los filtros `paths` no
+  # disparan el workflow, p.ej. en el primer push de una rama).
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "vesper-backend/**"
+      - "vesper-frontend/**"
+      - ".github/workflows/e2e-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "vesper-backend/**"
+      - "vesper-frontend/**"
+      - ".github/workflows/e2e-ci.yml"
+
+jobs:
+  e2e:
+    name: Playwright — specs por fase (F2+)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # F1: no hå specs todavía; estabilizar en F2.
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vesper
+          POSTGRES_PASSWORD: vesper
+          POSTGRES_DB: vesper_dev
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://vesper:vesper@localhost:55432/vesper_dev
+      JWT_SECRET: test-jwt-secret-de-al-menos-32-caracteres-para-ci
+      ENVIRONMENT: development
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_SSE_URL: http://localhost:8000
+      PYTHONPATH: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: vesper-backend/requirements.txt
+
+      - name: Instalar dependencias del backend
+        working-directory: vesper-backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Migrar la base de datos (alembic upgrade head)
+        working-directory: vesper-backend
+        run: alembic upgrade head
+
+      - name: Sembrar usuarios de prueba (cuando exista auth — F2)
+        working-directory: vesper-backend
+        # F1: script aborta amablemente sin auth. Re-habilitar seed en F2.
+        run: python scripts/seed_test_users.py || true
+
+      - name: Levantar el backend (uvicorn) en segundo plano
+        working-directory: vesper-backend
+        run: |
+          nohup python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 \
+            > uvicorn.log 2>&1 &
+          echo "Esperando a que el backend responda en /health..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "Backend arriba."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "El backend no respondió a tiempo. Log:"
+          cat uvicorn.log
+          exit 1
+
+      - name: Configurar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: vesper-frontend/package.json
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: vesper-frontend/pnpm-lock.yaml
+
+      - name: Instalar dependencias del frontend
+        working-directory: vesper-frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Instalar navegador Chromium (Playwright)
+        working-directory: vesper-frontend
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Ejecutar el E2E (Playwright levanta el frontend via webServer)
+        working-directory: vesper-frontend
+        run: pnpm e2e

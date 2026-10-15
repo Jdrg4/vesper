@@ -1,0 +1,57 @@
+# Workflow: tsc + ESLint + Vitest para vesper-frontend.
+# No incluye `pnpm build`: ningún paso del gate lo requiere (tsc ya valida
+# tipos) y build necesitaría NEXT_PUBLIC_API_URL solo para eso. Si se agrega,
+# declarar esa variable en `env:` o el build fallará (env.ts valida con Zod
+# en tiempo de import).
+name: Frontend CI
+
+on:
+  # Permite relanzar el gate a mano (util cuando los filtros `paths` no
+  # disparan el workflow, p.ej. en el primer push de una rama).
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "vesper-frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "vesper-frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+jobs:
+  test:
+    name: TypeScript + ESLint + Vitest
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: vesper-frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: vesper-frontend/package.json
+
+      - name: Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: vesper-frontend/pnpm-lock.yaml
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Verificar tipos (tsc)
+        run: pnpm exec tsc --noEmit
+
+      - name: Lint (ESLint)
+        run: pnpm lint
+
+      - name: Ejecutar tests unitarios (Vitest)
+        run: pnpm test:run

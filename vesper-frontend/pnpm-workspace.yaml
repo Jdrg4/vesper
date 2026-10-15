@@ -1,0 +1,14 @@
+packages:
+  - "."
+# pnpm 11 exige resolver explicitamente que dependencias pueden correr build
+# scripts. Con los placeholders sin decidir, cualquier `pnpm install` (incluido
+# el dep-check implicito de `pnpm exec`) aborta con ERR_PNPM_IGNORED_BUILDS y
+# tumba typecheck, tests y CI.
+allowBuilds:
+  # msw: su postinstall escribe public/mockServiceWorker.js. Hoy no se usa en
+  # ningun test; si se adopta, cambiar a true y commitear el worker.
+  msw: false
+  # sharp: binarios nativos de optimizacion de imagenes que usa Next en build.
+  sharp: true
+  # unrs-resolver: resolver nativo de la toolchain de ESLint.
+  unrs-resolver: true

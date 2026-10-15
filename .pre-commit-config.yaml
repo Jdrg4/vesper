@@ -1,0 +1,40 @@
+# codebase-memory-mcp hook asegura que alembic/env.py importe todos los
+# models.py de los dominios. Sigue el patrón habitual. Reenable cuando
+# existan modelos reales (F2). En F1 no es destructivo: solo advierte.
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^vesper-backend/
+      - id: ruff-format
+        files: ^vesper-backend/
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+
+ci:
+  autofix_commit_msg: "[pre-commit] auto-fix"
+  autofix_prs: true
+  autoupdate_branch: main
+  autoupdate_schedule: weekly
+  skip: []

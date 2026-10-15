@@ -1,0 +1,5 @@
+# Iconos PWA (F8).
+# Genera con cualquier generador de PWA icons desde un SVG fuente:
+#   https://realfavicongenerator.net/  o  https://www.pwabuilder.com/
+# Necesarios: icon-192.png, icon-512.png (maskable). Opcional: favicon.ico,
+# apple-touch-icon.png.

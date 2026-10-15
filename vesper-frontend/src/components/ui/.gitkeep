@@ -1,0 +1,2 @@
+# Componentes shadcn/ui (genera con `pnpm dlx shadcn add <component>`).
+# F1: vacio. Llega en F2+ con el primer componente que necesite auth.

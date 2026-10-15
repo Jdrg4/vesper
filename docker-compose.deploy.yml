@@ -1,0 +1,110 @@
+# docker-compose.deploy.yml
+#
+# Compose de PRODUCCION para Coolify (build_pack=dockercompose). Distinto del
+# compose de desarrollo local. Reglas:
+#
+#   - NINGUN servicio publica `ports:`. Coolify los honra y un `8000:8000`
+#     chocaria con el propio Coolify. Solo `expose` interno entre servicios.
+#   - SOLO el `frontend` recibe dominio publico, via `docker_compose_domains`
+#     de Coolify (Traefik) — NUNCA `fqdn`. El `backend` jamas es publico:
+#     asi los secretos (Zen key, JWT_SECRET, GitHub App key, credenciales
+#     de BD) nunca llegan al navegador.
+#   - `postgres`: volumen en `/var/lib/postgresql/data` (la ruta EXACTA de
+#     PGDATA de la imagen oficial `postgres:16`). `start_period` generoso.
+#   - `redis`: cola de jobs (F5+) + pub/sub de progreso del agente (F4+).
+#     Opcional en F1; el backend degrada con gracia sin el.
+#   - El dominio del frontend se asigna en Coolify DESPUES del primer deploy
+#     (que puebla `docker_compose_raw`).
+#
+# Todas las variables sensibles vienen de `${VAR}` (env vars puestas en
+# Coolify) — nunca hardcodeadas aqui. Ver `.env.deploy.example`.
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./vesper-backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      # Zen gateway (F4+). Solo backend, nunca bundle del frontend.
+      OPENCODE_ZEN_KEY: ${OPENCODE_ZEN_KEY:-}
+      OPENCODE_ZEN_BASE_URL: ${OPENCODE_ZEN_BASE_URL:-https://opencode.ai/zen/go/v1}
+      # Agent runtime (F4+).
+      OPENCODE_BIN: ${OPENCODE_BIN:-/usr/local/bin/opencode}
+      OPENCODE_PORT_POOL_START: ${OPENCODE_PORT_POOL_START:-14096}
+      # GitHub App (F3+).
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+    expose:
+      - "8000"
+    # El backend NUNCA es publico. El frontend lo alcanza por la red interna
+    # via sus API routes (NEXT_PUBLIC_API_URL -> /api/* -> backend:8000).
+    volumes:
+      # Workspaces efimeros por job (F4+): clones shallow de los repos del
+      # tenant. No commitear el contenido; solo el mountpoint.
+      - workspaces:/var/workspaces
+
+  frontend:
+    build:
+      context: ./vesper-frontend
+      dockerfile: Dockerfile
+      args:
+        # Build-time: se incrustan en el bundle. Si cambia el dominio del API
+        # hay que REBUILD. (Ver `.claude/rules/produccion-deploy.md`.)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_SSE_URL: ${NEXT_PUBLIC_SSE_URL}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # URL interna del backend para server-side fetch (route handlers / RSC).
+      BACKEND_INTERNAL_URL: http://backend:8000
+    expose:
+      - "3000"
+    # UNICO servicio publico del stack. En Coolify: asignar dominio con
+    # `docker_compose_domains` (Traefik), NO `fqdn`.
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  workspaces:

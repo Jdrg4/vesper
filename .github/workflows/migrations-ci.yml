@@ -1,0 +1,77 @@
+# Workflow: valida el ciclo de migraciones Alembic contra Postgres real y que
+# no haya drift entre los modelos SQLAlchemy y las revisiones existentes.
+# En F1 no hay migraciones todavía, pero el workflow ya está listo para F2+.
+name: Migrations CI
+
+on:
+  # Permite relanzar el gate a mano (util cuando los filtros `paths` no
+  # disparan el workflow, p.ej. en el primer push de una rama).
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "vesper-backend/alembic/**"
+      - "vesper-backend/**/models.py"
+      - ".github/workflows/migrations-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "vesper-backend/alembic/**"
+      - "vesper-backend/**/models.py"
+      - ".github/workflows/migrations-ci.yml"
+
+jobs:
+  validate:
+    name: Alembic upgrade -> downgrade -> upgrade -> check
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: vesper-backend
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vesper
+          POSTGRES_PASSWORD: vesper
+          POSTGRES_DB: vesper_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://vesper:vesper@localhost:55432/vesper_test
+      JWT_SECRET: test-jwt-secret-de-al-menos-32-caracteres-para-ci
+      ENVIRONMENT: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: vesper-backend/requirements.txt
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Aplicar todas las migraciones (upgrade head)
+        run: alembic upgrade head
+
+      - name: Bajar una revisión (downgrade -1)
+        run: alembic downgrade -1
+
+      - name: Volver a aplicar (upgrade head) — valida reversibilidad
+        run: alembic upgrade head
+
+      - name: Detectar drift entre modelos y migraciones (alembic check)
+        run: alembic check

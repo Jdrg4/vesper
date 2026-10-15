@@ -1,0 +1,78 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { NextRequest } from "next/server";
+
+import { POST, PUT } from "./route";
+
+const ORIGIN = "http://localhost:3000";
+
+function makeRequest(path: string, body: unknown = {}, method = "POST"): NextRequest {
+  return new NextRequest(new URL(path, ORIGIN), {
+    method,
+    headers: { "content-type": "application/json", cookie: "access_token=abc" },
+    body: JSON.stringify(body),
+  });
+}
+
+function mockBackend(status: number, body: string, headers: Record<string, string> = {}) {
+  const spy = vi.fn(async () => new Response(status === 204 ? null : body, { status, headers }));
+  vi.stubGlobal("fetch", spy);
+  return spy;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("proxy /api/[...path]", () => {
+  it("reenvia la peticion al backend reescribiendo /api -> /api/v1", async () => {
+    const fetchSpy = mockBackend(200, '{"ok":true}');
+
+    await POST(makeRequest("/api/auth/login", { email: "a@b.c" }));
+
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/api/v1/auth/login");
+    expect((init.headers as Headers).get("Cookie")).toBe("access_token=abc");
+  });
+
+  it("no revienta con un 204 del backend", async () => {
+    // 204 es "null body status": construir una Response con cuerpo — aunque sea
+    // "" — lanza un TypeError. El logout responde 204, asi que sin esto cada
+    // cierre de sesion devolvia un 500 del proxy.
+    mockBackend(204, "");
+
+    const res = await POST(makeRequest("/api/auth/logout"));
+
+    expect(res.status).toBe(204);
+    expect(await res.text()).toBe("");
+  });
+
+  it("propaga las cookies Set-Cookie del backend al navegador", async () => {
+    mockBackend(200, '{"ok":true}', { "set-cookie": "access_token=nuevo; HttpOnly; Path=/" });
+
+    const res = await POST(makeRequest("/api/auth/login"));
+
+    expect(res.headers.get("set-cookie")).toContain("access_token=nuevo");
+  });
+
+  it("conserva el status de error del backend", async () => {
+    mockBackend(401, '{"detail":"no autorizado"}');
+
+    const res = await POST(makeRequest("/api/auth/me"));
+
+    expect(res.status).toBe(401);
+    expect(await res.text()).toContain("no autorizado");
+  });
+
+  it("soporta PUT (usado por /settings para guardar credenciales BYOK)", async () => {
+    const fetchSpy = mockBackend(201, '{"id":"1","provider_id":"openai"}');
+
+    const res = await PUT(
+      makeRequest("/api/agents/credentials", { provider_id: "openai", api_key: "sk-x" }, "PUT"),
+    );
+
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/api/v1/agents/credentials");
+    expect(init.method).toBe("PUT");
+    expect(res.status).toBe(201);
+  });
+});
