@@ -17,6 +17,8 @@ RUN u="$(getent passwd 1000 | cut -d: -f1)" \
  && usermod -l agent -d /home/agent -m -s /bin/bash "$u"
 
 # pnpm y yarn vía corepack; opencode fijado a la versión que usa Vesper.
+# Sin esto el primer pnpm/yarn espera un prompt de descarga y el test muere por timeout.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable \
  && npm i -g opencode-ai@1.19.0 \
  && npm cache clean --force
