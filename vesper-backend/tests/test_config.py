@@ -8,6 +8,7 @@ SECRETOS = {
     "github_app_private_key": "clave-privada-de-la-app-secreta",  # pragma: allowlist secret
     "github_app_client_secret": "client-secret-secreto",  # pragma: allowlist secret
     "github_webhook_secret": "webhook-secret-secreto",  # pragma: allowlist secret
+    "redis_url": "redis://:clave-redis-secreta@h/0",  # pragma: allowlist secret
 }
 
 

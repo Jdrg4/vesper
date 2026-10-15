@@ -2,7 +2,7 @@ import re
 import uuid
 
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,6 +43,9 @@ async def register_tenant_with_admin(
         # podria usar la instancia recien desplegada. Consulta global a
         # proposito (no `tenant_scoped_query`): pregunta si la INSTANCIA esta
         # vacia y no devuelve datos de nadie.
+        # Lock de transaccion: dos altas simultaneas en una instancia vacia
+        # verian las dos "sin usuarios" y crearian dos cuentas.
+        await db.execute(text("SELECT pg_advisory_xact_lock(7243001)"))
         has_users = (await db.execute(select(User.id).limit(1))).first() is not None
         if has_users:
             raise ForbiddenError("El registro está cerrado en esta instancia")

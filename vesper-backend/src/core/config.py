@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # Redis (cola de jobs + pub/sub progreso del agente). Vacio = degrada con
     # gracia (sin scheduling ni SSE en vivo). Ver `CLAUDE.md` -> Trampas.
-    redis_url: str = ""
+    redis_url: str = Field(default="", repr=False)  # puede llevar contrasena
 
     # Allowlist de origenes para `CORSMiddleware` (CSV, p.ej.
     # "https://vesper.example.com"). Vacio = sin CORS abierto, correcto
