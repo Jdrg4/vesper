@@ -72,6 +72,31 @@ async def test_send_prompt_uses_provider_model_object_and_typed_parts():
     assert body["parts"] == [{"type": "text", "text": "revisa el repo"}]
 
 
+async def test_send_prompt_lanza_si_el_proveedor_devolvio_error():
+    """El runtime responde 200 aunque el proveedor falle, con el error en `info.error`
+    (forma real, capturada de opencode 1.19.0 con una suscripcion caducada). Sin
+    leerlo, el job terminaba `completed` con "No changes proposed": un agente que no
+    trabaja se veia igual que un repo sin nada que arreglar."""
+    message = "Upstream request failed: An active OpenCode Go subscription is required."
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "info": {
+                    "id": "msg_1",
+                    "error": {"name": "APIError", "data": {"message": message, "statusCode": 403}},
+                },
+                "parts": [],
+            },
+        )
+
+    runner = OpencodeRunner("/tmp/ws", 14096)
+    async with _client(handler) as client:
+        with pytest.raises(RuntimeError, match="subscription is required"):
+            await runner.send_prompt(client, "ses_abc", "revisa el repo", "glm-5.2")
+
+
 async def test_send_prompt_accepts_explicit_provider():
     """Un modelo `provider/modelo` permite usar otro proveedor que el default."""
     captured = {}

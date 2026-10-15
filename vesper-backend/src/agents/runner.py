@@ -238,7 +238,15 @@ class OpencodeRunner:
             timeout=600,
         )
         r.raise_for_status()
-        return r.json()
+        body = r.json()
+        # El runtime responde 200 aunque el proveedor falle (key invalida, sin
+        # suscripcion, modelo inexistente) y deja el error en `info.error`. Sin
+        # esto el job acababa `completed` con "No changes proposed".
+        error = (body.get("info") or {}).get("error")
+        if error:
+            detail = (error.get("data") or {}).get("message") or error.get("name") or str(error)
+            raise RuntimeError(f"El modelo no respondio: {detail}")
+        return body
 
     async def get_diff(self, client: httpx.AsyncClient, session_id: str) -> list[dict]:
         r = await client.get(f"{self._base_url}/session/{session_id}/diff")
