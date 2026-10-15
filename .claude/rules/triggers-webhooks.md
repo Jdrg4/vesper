@@ -46,10 +46,14 @@ significa que nada se dispara solo.
 
 ## Deuda conocida de este tema
 
-- **La URL del webhook tiene que ser pública.** El servidor está tras CGNAT;
-  el túnel de Cloudflare de F9 debe exponer `/api/v1/webhooks/github` sin
-  exponer el resto del backend. Hasta entonces, la validación local se hace
-  firmando el payload a mano con `GITHUB_WEBHOOK_SECRET`.
+- **El webhook entra por el proxy del frontend** (`/api/webhooks/github`), la única
+  vía pública: el backend no se expone. El proxy reenvía el cuerpo **byte a byte** y
+  las cabeceras `X-Hub-Signature-256`/`X-GitHub-Event`/`X-GitHub-Delivery`; si alguien
+  vuelve a parsear o re-serializar el cuerpo, la firma deja de validar y todo push
+  se rechaza con 401.
+- **`WorkerSettings.redis_settings` es un atributo, no un método**: Arq lo lee como
+  `redis_settings.host`. Como `staticmethod`, el worker moría al arrancar en
+  producción. En local no se ve porque sin Redis no se lanza el worker.
 - **Las cuotas cuentan jobs, no gasto.** `PLAN_QUOTAS` limita jobs/día y
   concurrencia; un job caro y uno barato valen igual. Con BYOK el coste lo paga
   el tenant, pero eso no protege de un prompt que queme su saldo.

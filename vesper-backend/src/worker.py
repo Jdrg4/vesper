@@ -64,11 +64,9 @@ class WorkerSettings:
     max_tries = 1
     job_timeout = 1800  # 30 min
 
-    @staticmethod
-    def redis_settings() -> RedisSettings:
-        """Se resuelve al arrancar el worker, no al importar el modulo.
-
-        `settings.redis_url` puede estar vacio en los tests, que importan esta
-        clase solo para comprobar que los nombres registrados casan.
-        """
-        return RedisSettings.from_dsn(settings.redis_url)
+    # Arq lo lee como ATRIBUTO (`redis_settings.host`): un metodo hacia morir al
+    # worker al arrancar. Sin `REDIS_URL` (tests, dev) queda el default de Arq;
+    # el worker solo se lanza donde Redis existe.
+    redis_settings = (
+        RedisSettings.from_dsn(settings.redis_url) if settings.redis_url else RedisSettings()
+    )

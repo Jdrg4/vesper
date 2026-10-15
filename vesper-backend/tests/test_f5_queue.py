@@ -68,3 +68,14 @@ async def test_worker_registra_run_review_job():
 
     nombres = {f.__name__ for f in WorkerSettings.functions}
     assert QUEUE_FN_RUN_JOB in nombres
+
+
+def test_worker_redis_settings_es_un_atributo_que_arq_sabe_leer():
+    """Arq lee `WorkerSettings.redis_settings.host` como atributo. Con un
+    `staticmethod` el worker de produccion moria al arrancar en bucle
+    (`'staticmethod' object has no attribute 'host'`) y nada vigilaba los repos."""
+    from arq.connections import RedisSettings
+
+    from src.worker import WorkerSettings
+
+    assert isinstance(WorkerSettings.redis_settings, RedisSettings)
