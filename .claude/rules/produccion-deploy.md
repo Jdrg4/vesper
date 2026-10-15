@@ -18,7 +18,21 @@ Tunnel**. Las variables están en `.env.deploy.example`.
 Accesos al servidor, tokens de la API del PaaS, llaves SSH y uuids viven fuera del repo.
 Jamás copiar sus valores a un archivo commiteado, a un `.env` versionado ni a un mensaje.
 
+### Primer despliegue: la cuenta antes que el dominio
+
+El compose arranca con `REGISTRATION_ENABLED=false`: solo se permite **la primera cuenta**.
+Créala **antes** de publicar el dominio (desde dentro del contenedor del backend, contra
+`http://localhost:8000/api/v1/auth/register`), o el primero que llegue a `/register` se queda
+con la instancia. Hasta que cada job corra en su propio contenedor, no abras el registro a
+terceros: el agente de un tenant podría leer del disco los clones de otro.
+
 ### Trampas de deploy
+
+- **Que Coolify diga `finished` no significa que todo esté arriba.** El primer despliegue
+  acabó `finished` con el worker en bucle de reinicios. Mirar el estado de cada contenedor
+  (`docker ps`) y los logs del worker: debe verse `tick_scheduler` cada minuto.
+- **El worker no tiene healthcheck**, así que Coolify muestra la app como `running:unknown`.
+  Es normal; lo que importa son sus logs.
 
 - **Crear la app en el PaaS NO crea el webhook de auto-deploy.** Verificar con
   `gh api repos/<owner>/<repo>/hooks --jq '.[] | {id, url: .config.url, active}'`.
