@@ -17,10 +17,9 @@ from src.core.config import settings
 OPENCODE_BASE_PORT = 14096
 
 # Techo de un turno del agente (`POST /message` espera a que termine). La spec de F6
-# fija "sin cuota de tiempo": esto es solo un freno de emergencia para que un fallo no
-# deje un job girando toda la noche contra la key del tenant. El corte real sera por
-# inactividad cuando se decida el harness. Va por debajo del `job_timeout` del worker.
-AGENT_TURN_TIMEOUT_SECONDS = 2 * 60 * 60
+# fija "sin cuota de tiempo": el corte normal es por inactividad (`OpencodeEngine`);
+# esto es solo la red de seguridad. Va por debajo del `job_timeout` del worker.
+AGENT_TURN_TIMEOUT_SECONDS = 6 * 60 * 60
 OPENCODE_HOST = "127.0.0.1"
 
 # Proveedor por defecto en la pasarela Zen. Los modelos que ofrecemos al tenant
