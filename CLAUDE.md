@@ -26,7 +26,7 @@ Conceptos:
 
 - **Tenant** = un equipo/desarrollador. Crea cuenta, instala la **GitHub App** en sus repos,
   configura `developer_model` + `reviewer_model` (BYOK: trae su propia key), recibe PRs del bot.
-- **Agent loop** (hoy, pre-F6): el backend spawnea `opencode serve` por job, con `cwd` =
+- **Agent loop** (hoy): el backend spawnea `opencode serve` por job, con `cwd` =
   workspace clonado del repo del tenant (shallow clone + token de instalación). Crea sesión,
   envía prompt, captura diff, valida, commitea en rama nueva y abre PR. SSE hacia la UI.
 - **Multi-agente reviewer** (F7): un segundo modelo revisa el PR recién creado.
@@ -42,8 +42,8 @@ Conceptos:
 > ([motor propio](docs/superpowers/specs/2026-08-04-f6-motor-de-agente-propio-design.md))
 > queda superada en lo del bucle propio; sus partes de contenedor y evals siguen vigentes.
 
-**Estado por fase (F1-F9)**: `.claude/rules/roadmap-fases.md`. Hoy: F1-F5 cerradas; **F6 en
-curso**; F7 reviewer, F8 PWA y F9 deploy pendientes. Las decisiones de diseño de cada fase
+**Estado por fase (F1-F9)**: `.claude/rules/roadmap-fases.md`. Hoy: F1-F5 y F9 (despliegue)
+cerradas; **F6 en curso**; F7 reviewer y F8 PWA pendientes. Las decisiones de diseño de cada fase
 viven en [docs/superpowers/specs/](docs/superpowers/specs/): al tocar la lógica de una fase,
 leer su spec antes de cambiarla.
 
@@ -56,7 +56,7 @@ leer su spec antes de cambiarla.
 | `postgres` | PostgreSQL 16+ | 55432 | Postgres local | Contenedor del compose |
 | `redis` | Redis | 6379 | Opcional (degrada con gracia) | Contenedor del compose |
 | `worker` (cola + cron) | Arq | — | `arq src.worker.WorkerSettings` | Mismo contenedor, otro `command` |
-| `opencode` (runtime agente) | binario opencode | 14096+ (pool dinámico) | Solo F4 (lo sustituye F6) | Sandbox por job |
+| `opencode` (runtime agente) | binario opencode | 14096+ (pool dinámico) | Primer harness (F6 lo pone tras una interfaz) | Sandbox por job |
 
 **Desarrollo local sin Docker**, salvo el sandbox del agent runner.
 
@@ -124,7 +124,7 @@ PWA móvil (Next.js) — única app pública
   │             ├─→ Redis (cola de jobs + bus de eventos de progreso)
   │             ├─→ GitHub App (installation tokens per repo del tenant)
   │             │
-  │             └─→ Agent runner (F4, lo sustituye F6):
+  │             └─→ Agent runner (F4; F6 lo pone tras una interfaz de motor):
   │                   acquire_port() → `opencode serve --port <pool 14096+>`
   │                   cwd = <workspaces>/<tenant>/<repo>/
   │                   wait_ready() → POST /session → message → GET /diff
