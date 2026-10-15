@@ -1,5 +1,10 @@
 # F6 — Motor de agente propio
 
+> **Superada en parte (2026-10-15):** Vesper ya no construye su propio bucle de agente. El
+> motor queda tras una interfaz con `opencode` primero:
+> [F6a — interfaz de motor](2026-10-15-f6a-interfaz-de-motor-design.md). El §4 (entorno de
+> desarrollo, ahora F6b) y la idea de evals siguen vigentes.
+
 **Fecha:** 2026-08-04
 **Estado:** diseño aprobado, pendiente de plan de implementación
 **Sustituye a:** el runtime `opencode` de [F4](2026-07-28-f4-agent-runner-design.md)
