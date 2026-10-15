@@ -117,6 +117,19 @@ async def sync_repositories(db: AsyncSession, tenant: Tenant) -> list[Repository
             repo.default_branch = gh.get("default_branch", repo.default_branch)
             repo.private = gh.get("private", repo.private)
         saved.append(repo)
+
+    # Lo que GitHub ya no devuelve (repo borrado o fuera de la instalacion) deja
+    # de vigilarse: si no, el cron sigue lanzando jobs que mueren en el clone. No
+    # se borra la fila, que arrastraria su historial de jobs (CASCADE).
+    gone = await db.execute(
+        tenant_scoped_query(Repository, tenant.id).where(
+            Repository.is_enrolled.is_(True),
+            Repository.github_id.not_in([gh["id"] for gh in gh_repos]),
+        )
+    )
+    for repo in gone.scalars():
+        repo.is_enrolled = False
+        logger.info("repository_unenrolled_gone", repo_id=str(repo.id), tenant_id=str(tenant.id))
     await db.flush()
     return saved
 

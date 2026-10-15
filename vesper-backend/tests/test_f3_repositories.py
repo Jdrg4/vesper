@@ -271,6 +271,35 @@ async def test_sync_preserves_enrollment(db_session: AsyncSession, patched_githu
     assert repo.is_enrolled is True
 
 
+async def test_sync_deja_de_vigilar_los_repos_que_github_ya_no_devuelve(
+    db_session: AsyncSession, patched_github
+):
+    """Un repo borrado en GitHub (o quitado de la instalacion) seguia vigilado: Jobs
+    lo ofrecia y el cron le lanzaba jobs que morian en el `git clone`. Se deja
+    de vigilar sin borrar la fila, que arrastraria su historial de jobs. Y el sync de
+    un tenant no toca los repos de otro."""
+    tenant = await _make_tenant(db_session, "gone")
+    other = await _make_tenant(db_session, "gone-other")
+    await services.store_installation(db_session, tenant, _callback(4004))
+    await services.store_installation(db_session, other, _callback(4005))
+    patched_github["repos"] = [_gh_repo("acme/borrado", 702), _gh_repo("acme/sigue", 703)]
+    for t in (tenant, other):
+        for repo in await services.sync_repositories(db_session, t):
+            await services.toggle_enrollment(db_session, t.id, repo.id, True)
+
+    patched_github["repos"] = [_gh_repo("acme/sigue", 703)]
+    await services.sync_repositories(db_session, tenant)
+
+    def _enrolled(tenant_id, github_id):
+        return select(Repository.is_enrolled).where(
+            Repository.tenant_id == tenant_id, Repository.github_id == github_id
+        )
+
+    assert (await db_session.execute(_enrolled(tenant.id, 702))).scalar_one() is False
+    assert (await db_session.execute(_enrolled(tenant.id, 703))).scalar_one() is True
+    assert (await db_session.execute(_enrolled(other.id, 702))).scalar_one() is True
+
+
 async def test_sync_without_installation_raises(db_session: AsyncSession, patched_github):
     tenant = await _make_tenant(db_session, "noinst")
     with pytest.raises(ValidationDomainError):
