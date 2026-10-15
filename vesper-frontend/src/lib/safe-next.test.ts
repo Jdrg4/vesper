@@ -20,6 +20,10 @@ describe("safeNextPath", () => {
     "\\\\evil.com",
     "/\t/evil.com",
     "/\n/evil.com",
+    // Los segmentos `.`/`..` se normalizan y dejan el path en `//evil.com`.
+    "/.//evil.com",
+    "/..//evil.com",
+    "/a/..//evil.com",
     "https://evil.com",
     "javascript:alert(1)",
     "evil.com",
