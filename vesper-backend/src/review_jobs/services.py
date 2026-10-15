@@ -192,6 +192,12 @@ async def _run_job_standalone(
         try:
             await svc.run_job(job_id, tenant_id)
             await session.commit()
+        except asyncio.CancelledError:
+            # Abortado: `run_job` ya dejo el job en `failed` / "Job abortado" con un
+            # flush. CancelledError no es Exception: sin este commit la sesion se
+            # cerraba descartandolo y el job seguia `running` para siempre.
+            await session.commit()
+            raise
         except Exception:
             await session.rollback()
             logger.exception("review_job_task_crashed", job_id=str(job_id))
@@ -252,7 +258,7 @@ async def abort_job(job_id: uuid.UUID | str) -> bool:
 # (repo, tarea) — el repo deja de vigilarse en silencio. Se recogen por
 # antiguedad y no "todos los running al arrancar", que con varios workers
 # matarian los jobs vivos de los demas.
-STALE_JOB_SECONDS = 3600
+STALE_JOB_SECONDS = 3 * 60 * 60  # por encima del job_timeout del worker, o recogeria jobs vivos
 
 
 async def reap_stale_jobs(db: AsyncSession, older_than: int = STALE_JOB_SECONDS) -> int:

@@ -75,12 +75,13 @@ async def test_send_prompt_uses_provider_model_object_and_typed_parts():
 def test_los_relojes_de_un_job_estan_en_orden():
     """turno del agente < job del worker < recogida de colgados. Con el turno a 10 min,
     una tarea real (docs con deepseek-v4-pro sobre un repo mediano) moria por
-    ReadTimeout aunque el worker le daba 30."""
+    ReadTimeout; ese job tardo 11 min 56 s. La spec de F6 fija "sin cuota de tiempo":
+    el techo es solo un freno de emergencia, hasta que llegue el corte por inactividad."""
     from src.agents.runner import AGENT_TURN_TIMEOUT_SECONDS
     from src.review_jobs.services import STALE_JOB_SECONDS
     from src.worker import WorkerSettings
 
-    assert AGENT_TURN_TIMEOUT_SECONDS >= 20 * 60
+    assert AGENT_TURN_TIMEOUT_SECONDS >= 2 * 60 * 60
     assert WorkerSettings.job_timeout >= AGENT_TURN_TIMEOUT_SECONDS + 5 * 60
     assert WorkerSettings.job_timeout < STALE_JOB_SECONDS
 
@@ -93,7 +94,7 @@ async def test_send_prompt_explica_el_timeout_en_claro():
 
     runner = OpencodeRunner("/tmp/ws", 14096)
     async with _client(handler) as client:
-        with pytest.raises(RuntimeError, match="no terminó en 25 min"):
+        with pytest.raises(RuntimeError, match="no terminó en 120 min"):
             await runner.send_prompt(client, "ses_abc", "revisa el repo", "glm-5.2")
 
 

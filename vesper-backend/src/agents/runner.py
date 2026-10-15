@@ -16,10 +16,11 @@ from src.core.config import settings
 
 OPENCODE_BASE_PORT = 14096
 
-# Lo que puede tardar el agente en un turno (`POST /message` espera a que termine).
-# Una tarea real tarda mas de 10 min; queda por debajo del `job_timeout` del worker
-# (30 min) con margen para clonar, validar y abrir el PR.
-AGENT_TURN_TIMEOUT_SECONDS = 25 * 60
+# Techo de un turno del agente (`POST /message` espera a que termine). La spec de F6
+# fija "sin cuota de tiempo": esto es solo un freno de emergencia para que un fallo no
+# deje un job girando toda la noche contra la key del tenant. El corte real sera por
+# inactividad cuando se decida el harness. Va por debajo del `job_timeout` del worker.
+AGENT_TURN_TIMEOUT_SECONDS = 2 * 60 * 60
 OPENCODE_HOST = "127.0.0.1"
 
 # Proveedor por defecto en la pasarela Zen. Los modelos que ofrecemos al tenant

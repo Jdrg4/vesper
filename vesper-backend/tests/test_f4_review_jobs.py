@@ -559,6 +559,52 @@ async def test_abort_cancels_running_job(db_session: AsyncSession, patched_githu
     assert await services.abort_job(job.id) is False
 
 
+async def test_abort_queda_guardado_aunque_el_job_corra_con_su_propia_sesion(
+    _engine, db_session: AsyncSession, patched_github
+):
+    """`_run_job_standalone` (el camino del worker) solo hacia commit si `run_job`
+    terminaba bien. Un abort es `CancelledError` (BaseException): la sesion se cerraba
+    sin commit, "Job abortado" se perdia y el job seguia `running` para la API."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    tenant = Tenant(name="Abort2 WS", slug=f"abort2-{_un()}")
+    db_session.add(tenant)
+    await db_session.flush()
+    repo = await _make_repo(db_session, tenant.id)
+    job = await services.ReviewService(db_session).create_job(
+        tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs)
+    )
+    await db_session.commit()
+
+    started = asyncio.Event()
+
+    class _HangingRunner(FakeOpencodeRunner):
+        async def send_prompt(self, client, session_id, prompt, model="glm-5.2"):
+            started.set()
+            await asyncio.sleep(30)
+            return {}
+
+    task = asyncio.create_task(
+        services._run_job_standalone(
+            job.id,
+            tenant.id,
+            workspace_svc=_FakeWorkspace([{"file": "a.py"}]),
+            runner_class=lambda workdir, port, env=None: _HangingRunner(workdir, port),
+            session_factory=async_sessionmaker(_engine, expire_on_commit=False),
+        )
+    )
+    services.register_running_job(job.id, task)
+    await asyncio.wait_for(started.wait(), timeout=5)
+    assert await services.abort_job(job.id) is True
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    async with async_sessionmaker(_engine)() as other:
+        row = (await other.execute(select(ReviewJob).where(ReviewJob.id == job.id))).scalar_one()
+    assert row.status == JobStatus.failed
+    assert row.error_message == {"error": "Job abortado"}
+
+
 async def test_abort_unknown_job_returns_false():
     assert await services.abort_job(uuid.uuid4()) is False
 

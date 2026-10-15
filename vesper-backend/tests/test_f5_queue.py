@@ -70,6 +70,31 @@ async def test_worker_registra_run_review_job():
     assert QUEUE_FN_RUN_JOB in nombres
 
 
+async def test_un_job_del_worker_se_puede_detener(monkeypatch):
+    """En produccion los jobs los corre el worker de Arq. El abort llega por Redis y el
+    worker busca el job en `_RUNNING_JOBS`, pero `run_review_job` no lo registraba:
+    "Detener" no hacia nada y el job seguia hasta el final."""
+    import asyncio
+
+    from src import worker
+    from src.review_jobs import services as rj
+
+    started = asyncio.Event()
+
+    async def _forever(job_id, tenant_id):
+        started.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(worker, "_run_job_standalone", _forever)
+    job_id, tenant_id = uuid.uuid4(), uuid.uuid4()
+    task = asyncio.create_task(worker.run_review_job({}, job_id, tenant_id))
+    await started.wait()
+
+    assert await rj.abort_job(job_id) is True
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
 def test_worker_redis_settings_es_un_atributo_que_arq_sabe_leer():
     """Arq lee `WorkerSettings.redis_settings.host` como atributo. Con un
     `staticmethod` el worker de produccion moria al arrancar en bucle

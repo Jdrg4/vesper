@@ -19,7 +19,7 @@ from arq.connections import RedisSettings
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
 from src.core.logging_config import configure_logging
-from src.review_jobs.services import _run_job_standalone, listen_aborts
+from src.review_jobs.services import _run_job_standalone, listen_aborts, register_running_job
 from src.triggers.services import tick
 
 logger = structlog.get_logger(__name__)
@@ -28,6 +28,9 @@ logger = structlog.get_logger(__name__)
 async def run_review_job(ctx: dict, job_id: uuid.UUID, tenant_id: uuid.UUID) -> None:
     """Ejecuta un review job. Sin reintentos: ver `WorkerSettings.max_tries`."""
     logger.info("worker_job_start", job_id=str(job_id), tenant_id=str(tenant_id))
+    # Registrarlo es lo que permite detenerlo: el abort llega por Redis
+    # (`listen_aborts`) y busca el job en `_RUNNING_JOBS` de ESTE proceso.
+    register_running_job(job_id, asyncio.current_task())
     await _run_job_standalone(job_id, tenant_id)
 
 
@@ -62,7 +65,7 @@ class WorkerSettings:
     # Reintentar un job del agente es volver a gastar tokens del tenant y el
     # resultado no es determinista. Un fallo se queda en `failed`.
     max_tries = 1
-    job_timeout = 1800  # 30 min
+    job_timeout = 2 * 60 * 60 + 15 * 60  # el turno del agente (2 h) + clonar, validar y abrir el PR
 
     # Arq lo lee como ATRIBUTO (`redis_settings.host`): un metodo hacia morir al
     # worker al arrancar. Sin `REDIS_URL` (tests, dev) queda el default de Arq;
