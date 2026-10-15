@@ -42,7 +42,7 @@ describe("JobThread", () => {
       />,
     );
 
-    expect(screen.getByText("1 files changed: src/calc.py")).toBeInTheDocument();
+    expect(screen.getByText("1 archivo cambiado")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Ver pull request/ })).toHaveAttribute(
       "href",
       "https://github.com/acme/api/pull/3",
@@ -91,6 +91,26 @@ describe("JobThread", () => {
     await userEvent.click(screen.getByRole("button", { name: "Detener" }));
     expect(screen.getByRole("button", { name: /Deteniendo/ })).toBeDisabled();
     resolver();
+  });
+
+  it("una lista larga de archivos no tapa el PR: recuento visible y lista plegada", () => {
+    const files = Array.from({ length: 45 }, (_, i) => `src/mod${i}.py`);
+    render(
+      <JobThread
+        job={{ ...base, diff_summary: `45 files changed: ${files.join(", ")}`, pull_request_url: "https://x/pull/1" }}
+        repoName="acme/api"
+        onAbort={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("45 archivos cambiados")).toBeInTheDocument();
+    expect(screen.getByText("src/mod44.py")).not.toBeVisible();
+  });
+
+  it("un solo archivo se escribe en singular", () => {
+    render(<JobThread job={{ ...base, diff_summary: "1 files changed: src/calc.py" }} repoName="acme/api" onAbort={vi.fn()} />);
+
+    expect(screen.getByText("1 archivo cambiado")).toBeInTheDocument();
   });
 
   it("completado sin cambios lo dice en claro", () => {

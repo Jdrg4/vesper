@@ -111,7 +111,7 @@ export function JobThread({
                 No encontré nada que cambiar en esta revisión.
               </p>
             ) : (
-              <p className="text-[0.9375rem] leading-relaxed">{job.diff_summary}</p>
+              <ChangedFiles summary={job.diff_summary} />
             ))}
 
           {job.pull_request_url && (
@@ -136,6 +136,32 @@ export function JobThread({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * El backend resume el diff como "N files changed: a, b, c". Con 45 archivos ese texto
+ * tapaba el boton del PR: se muestra el recuento y la lista va plegada.
+ */
+function ChangedFiles({ summary }: { summary: string }) {
+  const m = summary.match(/^(\d+) files? changed: ([\s\S]*)$/);
+  if (!m) return <p className="text-[0.9375rem] leading-relaxed">{summary}</p>;
+  const count = Number(m[1]);
+  const files = m[2].split(", ").filter(Boolean);
+  return (
+    <details className="group">
+      <summary className="cursor-pointer list-none text-[0.9375rem] leading-relaxed">
+        {count === 1 ? "1 archivo cambiado" : `${count} archivos cambiados`}
+        <span className="ml-2 text-xs text-ink-3 group-open:hidden">Ver archivos</span>
+      </summary>
+      <ul className="mt-2 max-h-60 space-y-0.5 overflow-auto rounded-xl border bg-muted p-3 font-mono text-xs text-ink-2">
+        {files.map((f) => (
+          <li key={f} className="truncate" title={f}>
+            {f}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
