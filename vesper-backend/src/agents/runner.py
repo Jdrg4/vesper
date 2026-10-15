@@ -15,6 +15,11 @@ import httpx
 from src.core.config import settings
 
 OPENCODE_BASE_PORT = 14096
+
+# Lo que puede tardar el agente en un turno (`POST /message` espera a que termine).
+# Una tarea real tarda mas de 10 min; queda por debajo del `job_timeout` del worker
+# (30 min) con margen para clonar, validar y abrir el PR.
+AGENT_TURN_TIMEOUT_SECONDS = 25 * 60
 OPENCODE_HOST = "127.0.0.1"
 
 # Proveedor por defecto en la pasarela Zen. Los modelos que ofrecemos al tenant
@@ -226,17 +231,24 @@ class OpencodeRunner:
     async def send_prompt(
         self, client: httpx.AsyncClient, session_id: str, prompt: str, model: str = "glm-5.2"
     ) -> dict:
-        r = await client.post(
-            f"{self._base_url}/session/{session_id}/message",
-            json={
-                # `model` es un objeto {providerID, modelID}, ambos obligatorios;
-                # un string plano lo rechaza el schema del runtime.
-                "model": split_model(model),
-                # `TextPartInput` exige `type` ademas de `text`.
-                "parts": [{"type": "text", "text": prompt}],
-            },
-            timeout=600,
-        )
+        try:
+            r = await client.post(
+                f"{self._base_url}/session/{session_id}/message",
+                json={
+                    # `model` es un objeto {providerID, modelID}, ambos obligatorios;
+                    # un string plano lo rechaza el schema del runtime.
+                    "model": split_model(model),
+                    # `TextPartInput` exige `type` ademas de `text`.
+                    "parts": [{"type": "text", "text": prompt}],
+                },
+                timeout=AGENT_TURN_TIMEOUT_SECONDS,
+            )
+        except httpx.TimeoutException as exc:
+            minutes = AGENT_TURN_TIMEOUT_SECONDS // 60
+            raise RuntimeError(
+                f"El agente no terminó en {minutes} min. Prueba una tarea más acotada "
+                "o un prompt libre sobre una parte concreta del repo."
+            ) from exc
         r.raise_for_status()
         body = r.json()
         # El runtime responde 200 aunque el proveedor falle (key invalida, sin

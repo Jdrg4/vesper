@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents.credentials import mark_used, resolve_credentials
-from src.agents.runner import OpencodeRunner, split_model
+from src.agents.runner import AGENT_TURN_TIMEOUT_SECONDS, OpencodeRunner, split_model
 from src.agents.sandbox import AgentSandbox
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
@@ -742,7 +742,7 @@ class ReviewService:
             await runner.wait_ready()
 
             # `auth`: el runtime arranca protegido con un password por job.
-            client = httpx.AsyncClient(timeout=600, auth=runner.auth)
+            client = httpx.AsyncClient(timeout=AGENT_TURN_TIMEOUT_SECONDS, auth=runner.auth)
             session_id = await runner.create_session(client)
             # `create_job` siempre lo puebla; el fallback cubre jobs viejos, que
             # se escribieron cuando la columna admitia NULL.

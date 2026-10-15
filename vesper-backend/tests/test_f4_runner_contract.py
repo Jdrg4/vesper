@@ -72,6 +72,31 @@ async def test_send_prompt_uses_provider_model_object_and_typed_parts():
     assert body["parts"] == [{"type": "text", "text": "revisa el repo"}]
 
 
+def test_los_relojes_de_un_job_estan_en_orden():
+    """turno del agente < job del worker < recogida de colgados. Con el turno a 10 min,
+    una tarea real (docs con deepseek-v4-pro sobre un repo mediano) moria por
+    ReadTimeout aunque el worker le daba 30."""
+    from src.agents.runner import AGENT_TURN_TIMEOUT_SECONDS
+    from src.review_jobs.services import STALE_JOB_SECONDS
+    from src.worker import WorkerSettings
+
+    assert AGENT_TURN_TIMEOUT_SECONDS >= 20 * 60
+    assert WorkerSettings.job_timeout >= AGENT_TURN_TIMEOUT_SECONDS + 5 * 60
+    assert WorkerSettings.job_timeout < STALE_JOB_SECONDS
+
+
+async def test_send_prompt_explica_el_timeout_en_claro():
+    """`ReadTimeout('')` no le dice nada al usuario."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    runner = OpencodeRunner("/tmp/ws", 14096)
+    async with _client(handler) as client:
+        with pytest.raises(RuntimeError, match="no terminó en 25 min"):
+            await runner.send_prompt(client, "ses_abc", "revisa el repo", "glm-5.2")
+
+
 async def test_send_prompt_lanza_si_el_proveedor_devolvio_error():
     """El runtime responde 200 aunque el proveedor falle, con el error en `info.error`
     (forma real, capturada de opencode 1.19.0 con una suscripcion caducada). Sin
