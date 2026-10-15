@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink, GitBranch, Square } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { BrandMark } from "@/components/ui/brand-mark";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -17,6 +17,49 @@ function duration(job: Job): string | null {
   return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
+type Activity = { tool: string; path: string | null };
+
+// Los mismos que `TERMINAL_EVENTS` del backend (review_jobs/services.py).
+const TERMINAL_EVENTS = new Set(["completed", "error", "needs_review"]);
+
+const VERBS: Record<string, string> = {
+  read: "Leyendo",
+  edit: "Editando",
+  write: "Escribiendo",
+  glob: "Buscando archivos",
+  grep: "Buscando en el código",
+  list: "Mirando la estructura",
+};
+
+function describeActivity({ tool, path }: Activity): string {
+  if (tool === "bash") return "Ejecutando un comando";
+  const verb = VERBS[tool] ?? `Usando ${tool}`;
+  return path ? `${verb} ${path}` : verb;
+}
+
+/** Lo ultimo que hizo el agente, mientras el job corre. El backend solo manda la
+ *  herramienta y la ruta relativa al repo: nunca texto del modelo. */
+function useActivity(jobId: string, running: boolean): Activity | null {
+  const [activity, setActivity] = useState<Activity | null>(null);
+  useEffect(() => {
+    if (!running) return;
+    const source = new EventSource(`/api/jobs/${jobId}/events`);
+    source.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data) as { event: string; data: Activity };
+        if (msg.event === "activity") setActivity(msg.data);
+        // Job terminado: sin cerrar, EventSource reconectaria y bajaria de nuevo
+        // todo el historial. El `timeout` del backend no cierra: el job sigue.
+        else if (TERMINAL_EVENTS.has(msg.event)) source.close();
+      } catch {
+        // Un evento malformado no debe tumbar el hilo.
+      }
+    };
+    return () => source.close();
+  }, [jobId, running]);
+  return running ? activity : null;
+}
+
 /** Un job leido como conversacion: el encargo, y lo que respondio el agente. */
 export function JobThread({
   job,
@@ -30,6 +73,7 @@ export function JobThread({
   const { active } = jobStatus(job.status);
   const took = duration(job);
   const [stopping, setStopping] = useState(false);
+  const activity = useActivity(job.id, job.status === "running");
 
   async function stop() {
     setStopping(true);
@@ -75,7 +119,11 @@ export function JobThread({
           {active && (
             <div className="flex items-center gap-3">
               <p className="flex items-center gap-2 text-[0.9375rem] text-ink-2">
-                {job.status === "queued" ? "En cola, esperando turno" : "Trabajando en el repo"}
+                {job.status === "queued"
+                  ? "En cola, esperando turno"
+                  : activity
+                    ? describeActivity(activity)
+                    : "Trabajando en el repo"}
                 <Dots />
               </p>
               {/* Solo en marcha: el backend no aborta un job en cola, y ofrecerlo

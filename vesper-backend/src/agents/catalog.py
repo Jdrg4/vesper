@@ -65,7 +65,15 @@ def _trim(raw: dict) -> dict[str, dict]:
         if not isinstance(provider, dict):
             continue
         modelos = provider.get("models") or {}
-        if not isinstance(modelos, dict) or not modelos:
+        if not isinstance(modelos, dict):
+            continue
+        # opencode oculta los obsoletos: ofrecerlos acababa en "Model not found".
+        modelos = {
+            model_id: m
+            for model_id, m in modelos.items()
+            if (m or {}).get("status") != "deprecated"
+        }
+        if not modelos:
             continue
         catalogo[provider_id] = {
             "name": provider.get("name") or provider_id,

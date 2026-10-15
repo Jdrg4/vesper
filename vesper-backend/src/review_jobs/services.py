@@ -9,19 +9,21 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import httpx
 import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents.credentials import mark_used, resolve_credentials
-from src.agents.runner import AGENT_TURN_TIMEOUT_SECONDS, OpencodeRunner, split_model
-from src.agents.sandbox import AgentSandbox
+from src.agents.engine import Activity, AgentEngine
+from src.agents.opencode_engine import OpencodeEngine
+from src.agents.runner import split_model
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
 from src.core.exceptions import NotFoundError, QuotaExceededError, ValidationDomainError
@@ -141,30 +143,16 @@ async def clear_events(job_id: str | uuid.UUID) -> None:
     await redis.delete(_events_key(job_id))
 
 
-# ---------------------------------------------------------------------  Puertos
-# Cada job necesita SU puerto: con el puerto fijo, dos jobs concurrentes hacian
-# que el segundo `opencode serve` no arrancara (o que hablara con la sesion del
-# primero, que puede ser de otro tenant).
-_PORT_LOCK = asyncio.Lock()
-_PORTS_IN_USE: set[int] = set()
-MAX_CONCURRENT_JOBS = 64
+# ------------------------------------------------------------------  Motor
+# Cuanto espera la UI entre dos avisos de actividad del mismo job: el agente
+# lanza herramientas a rafagas y el bus no necesita cada una.
+ACTIVITY_THROTTLE_SECONDS = 3.0
+
+EngineFactory = Callable[[str], AgentEngine]
 
 
-async def acquire_port() -> int:
-    async with _PORT_LOCK:
-        start = settings.opencode_port_pool_start
-        for offset in range(MAX_CONCURRENT_JOBS):
-            port = start + offset
-            if port not in _PORTS_IN_USE:
-                _PORTS_IN_USE.add(port)
-                return port
-    raise ValidationDomainError(
-        f"Sin puertos libres para el agente (max {MAX_CONCURRENT_JOBS} jobs concurrentes)"
-    )
-
-
-def release_port(port: int) -> None:
-    _PORTS_IN_USE.discard(port)
+def default_engine_factory(workspace_base: Path) -> EngineFactory:
+    return lambda job_id: OpencodeEngine(workspace_base, job_id)
 
 
 # ------------------------------------------------------------  Tareas de fondo
@@ -178,7 +166,7 @@ async def _run_job_standalone(
     tenant_id: uuid.UUID,
     *,
     workspace_svc: WorkspaceService | None = None,
-    runner_class: type[OpencodeRunner] = OpencodeRunner,
+    engine_factory: EngineFactory | None = None,
     session_factory=None,
 ) -> None:
     """Corre un job con su PROPIA sesion de BD.
@@ -188,7 +176,7 @@ async def _run_job_standalone(
     """
     factory = session_factory or AsyncSessionLocal
     async with factory() as session:
-        svc = ReviewService(session, workspace_svc=workspace_svc, runner_class=runner_class)
+        svc = ReviewService(session, workspace_svc=workspace_svc, engine_factory=engine_factory)
         try:
             await svc.run_job(job_id, tenant_id)
             await session.commit()
@@ -258,7 +246,7 @@ async def abort_job(job_id: uuid.UUID | str) -> bool:
 # (repo, tarea) — el repo deja de vigilarse en silencio. Se recogen por
 # antiguedad y no "todos los running al arrancar", que con varios workers
 # matarian los jobs vivos de los demas.
-STALE_JOB_SECONDS = 3 * 60 * 60  # por encima del job_timeout del worker, o recogeria jobs vivos
+STALE_JOB_SECONDS = 7 * 60 * 60  # por encima del job_timeout del worker, o recogeria jobs vivos
 
 
 async def reap_stale_jobs(db: AsyncSession, older_than: int = STALE_JOB_SECONDS) -> int:
@@ -600,16 +588,53 @@ def _diff_summary(diffs: list[dict]) -> str:
     return f"{len(diffs)} files changed: {', '.join(paths)}"
 
 
+def _activity_publisher(job_id: uuid.UUID):
+    """Reenvia al SSE lo que hace el agente: la primera actividad de una rafaga al
+    momento y la ultima al cerrar la ventana de `ACTIVITY_THROTTLE_SECONDS`.
+
+    Quedarse solo con la primera dejaba en pantalla «Leyendo a.py» durante los
+    minutos que tardaba la suite lanzada justo despues.
+    """
+    last_sent = -float("inf")
+    latest: Activity | None = None
+    trailing: asyncio.Task | None = None
+
+    async def send(activity: Activity) -> None:
+        nonlocal last_sent
+        last_sent = time.monotonic()
+        await push_event(job_id, "activity", {"tool": activity.tool, "path": activity.path})
+
+    async def flush(delay: float) -> None:
+        nonlocal trailing
+        await asyncio.sleep(delay)
+        trailing = None
+        if latest is not None:
+            await send(latest)
+
+    async def publish(activity: Activity) -> None:
+        nonlocal latest, trailing
+        wait = last_sent + ACTIVITY_THROTTLE_SECONDS - time.monotonic()
+        if wait <= 0 and trailing is None:
+            latest = None
+            await send(activity)
+            return
+        latest = activity
+        if trailing is None:
+            trailing = asyncio.create_task(flush(max(wait, 0)))
+
+    return publish
+
+
 class ReviewService:
     def __init__(
         self,
         db: AsyncSession,
         workspace_svc: WorkspaceService | None = None,
-        runner_class: type[OpencodeRunner] = OpencodeRunner,
+        engine_factory: EngineFactory | None = None,
     ) -> None:
         self.db = db
         self.workspace_svc = workspace_svc or WorkspaceService()
-        self.runner_class = runner_class
+        self.engine_factory = engine_factory or default_engine_factory(self.workspace_svc.base)
 
     async def _repo_scoped(self, repo_id: uuid.UUID, tenant_id: uuid.UUID) -> Repository | None:
         q = tenant_scoped_query(Repository, tenant_id).where(Repository.id == repo_id)
@@ -715,10 +740,7 @@ class ReviewService:
         # solo saltaba al estado final de golpe.
         await self.db.commit()
 
-        port = await acquire_port()
-        runner: OpencodeRunner | None = None
-        client: httpx.AsyncClient | None = None
-        sandbox: AgentSandbox | None = None
+        engine: AgentEngine | None = None
 
         try:
             # Las credenciales del tenant primero: si no las tiene, no tiene
@@ -736,26 +758,13 @@ class ReviewService:
 
             await push_event(job_id, "progress", {"message": "Starting agent..."})
 
-            # Directorio de datos propio del job, con las credenciales de ESTE
-            # tenant y nada mas. Ver `AgentSandbox`.
-            sandbox = AgentSandbox(self.workspace_svc.base, str(job_id))
-            sandbox.setup(credentials)
-
-            runner = self.runner_class(str(workdir), port, sandbox.env())
-            await runner.start()
-            # Sondea /global/health en vez de dormir 1s a ciegas: el arranque de
-            # `opencode serve` no es instantaneo y el primer POST fallaba.
-            await runner.wait_ready()
-
-            # `auth`: el runtime arranca protegido con un password por job.
-            client = httpx.AsyncClient(timeout=AGENT_TURN_TIMEOUT_SECONDS, auth=runner.auth)
-            session_id = await runner.create_session(client)
-            # `create_job` siempre lo puebla; el fallback cubre jobs viejos, que
-            # se escribieron cuando la columna admitia NULL.
             prompt = job.prompt or build_prompt(job.task_type.value, repo.full_name, job.ref)
+            # `create_job` siempre puebla `prompt`; el fallback cubre jobs viejos,
+            # que se escribieron cuando la columna admitia NULL.
 
             await push_event(job_id, "progress", {"message": "Agent reviewing..."})
-            await runner.send_prompt(client, session_id, prompt, job.model)
+            engine = self.engine_factory(str(job_id))
+            await engine.run(workdir, prompt, job.model, credentials, _activity_publisher(job_id))
             await mark_used(self.db, tenant_id, split_model(job.model)["providerID"])
 
             # El diff se lee del workspace con git, no de `GET /session/:id/diff`
@@ -846,15 +855,8 @@ class ReviewService:
             )
 
         finally:
-            release_port(port)
-            if client:
-                await client.aclose()
-            if runner:
-                await runner.stop()
-            # Despues de parar el runtime: mientras vivia tenia el auth.json
-            # abierto, y en Windows eso impide borrarlo.
-            if sandbox:
-                await sandbox.cleanup()
+            if engine is not None:
+                await engine.stop()
 
     async def trigger_job(self, tenant: Tenant, data: JobCreateRequest) -> ReviewJob:
         job = await self.create_job(tenant, data)

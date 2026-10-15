@@ -14,7 +14,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.agents import opencode_engine
 from src.agents.models import TenantCredential
+from src.agents.opencode_engine import OpencodeEngine
 from src.agents.runner import FakeOpencodeRunner
 from src.core.crypto import encrypt
 from src.core.exceptions import NotFoundError
@@ -24,6 +26,12 @@ from src.review_jobs.constants import JobStatus, TaskType
 from src.review_jobs.models import ReviewJob
 from src.review_jobs.schemas import JobCreateRequest
 from src.tenants.models import Tenant
+
+
+def _engine_with(runner_factory):
+    """Motor real de opencode sobre un runner falso: ejercita puerto, sandbox y stop."""
+    base = Path(tempfile.mkdtemp(prefix="vesper-test-engine-"))
+    return lambda job_id: OpencodeEngine(base, job_id, runner_factory=runner_factory)
 
 
 def _un() -> str:
@@ -277,7 +285,9 @@ async def test_run_job_opens_pr_and_completes(db_session: AsyncSession, patched_
     svc = services.ReviewService(
         db_session,
         workspace_svc=ws,
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff)
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.quality)
@@ -305,7 +315,9 @@ async def test_run_job_needs_review_on_sensitive_path(db_session: AsyncSession, 
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace(diff),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff)
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.security)
@@ -328,7 +340,9 @@ async def test_run_job_no_changes_completes(db_session: AsyncSession, patched_gi
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace([]),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=[]),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=[])
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs)
@@ -357,7 +371,9 @@ async def test_run_job_failure_records_error(db_session: AsyncSession, monkeypat
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace(),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port)
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs)
@@ -382,8 +398,8 @@ async def test_run_job_ignores_job_of_other_tenant(db_session: AsyncSession, pat
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace([{"file": "a"}]),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(
-            workdir, port, diff=[{"file": "a"}]
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=[{"file": "a"}])
         ),
     )
     job = await svc.create_job(
@@ -495,7 +511,9 @@ async def test_run_job_with_secret_in_diff_needs_review(db_session: AsyncSession
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace(diff),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff)
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.security)
@@ -535,9 +553,7 @@ async def test_abort_cancels_running_job(db_session: AsyncSession, patched_githu
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace([{"file": "a.py"}]),
-        runner_class=lambda workdir, port, env=None: _HangingRunner(
-            workdir, port, diff=[{"file": "a.py"}]
-        ),
+        engine_factory=_engine_with(lambda w, p, e=None: _HangingRunner(w, p)),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs)
@@ -589,7 +605,7 @@ async def test_abort_queda_guardado_aunque_el_job_corra_con_su_propia_sesion(
             job.id,
             tenant.id,
             workspace_svc=_FakeWorkspace([{"file": "a.py"}]),
-            runner_class=lambda workdir, port, env=None: _HangingRunner(workdir, port),
+            engine_factory=_engine_with(lambda w, p, e=None: _HangingRunner(w, p)),
             session_factory=async_sessionmaker(_engine, expire_on_commit=False),
         )
     )
@@ -611,8 +627,8 @@ async def test_abort_unknown_job_returns_false():
 
 async def test_abort_frees_the_port(db_session: AsyncSession, patched_github):
     """Un job abortado tiene que devolver su puerto al pool."""
-    before = await services.acquire_port()
-    services.release_port(before)
+    before = await opencode_engine.acquire_port()
+    opencode_engine.release_port(before)
 
     tenant = Tenant(name="Port WS", slug=f"port-{_un()}")
     db_session.add(tenant)
@@ -630,9 +646,7 @@ async def test_abort_frees_the_port(db_session: AsyncSession, patched_github):
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace([{"file": "a.py"}]),
-        runner_class=lambda workdir, port, env=None: _HangingRunner(
-            workdir, port, diff=[{"file": "a.py"}]
-        ),
+        engine_factory=_engine_with(lambda w, p, e=None: _HangingRunner(w, p)),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs)
@@ -644,30 +658,30 @@ async def test_abort_frees_the_port(db_session: AsyncSession, patched_github):
     await services.abort_job(job.id)
     await asyncio.sleep(0.1)
 
-    after = await services.acquire_port()
-    services.release_port(after)
+    after = await opencode_engine.acquire_port()
+    opencode_engine.release_port(after)
     assert after == before, "el puerto del job abortado quedo ocupado"
 
 
 # ------------------------------------------------------------------  Puertos
 async def test_port_pool_gives_distinct_ports():
-    p1 = await services.acquire_port()
-    p2 = await services.acquire_port()
+    p1 = await opencode_engine.acquire_port()
+    p2 = await opencode_engine.acquire_port()
     try:
         assert p1 != p2
     finally:
-        services.release_port(p1)
-        services.release_port(p2)
+        opencode_engine.release_port(p1)
+        opencode_engine.release_port(p2)
 
 
 async def test_port_pool_reuses_released_port():
-    p1 = await services.acquire_port()
-    services.release_port(p1)
-    p2 = await services.acquire_port()
+    p1 = await opencode_engine.acquire_port()
+    opencode_engine.release_port(p1)
+    p2 = await opencode_engine.acquire_port()
     try:
         assert p1 == p2
     finally:
-        services.release_port(p2)
+        opencode_engine.release_port(p2)
 
 
 # -------------------------------------------------------------------  Eventos
@@ -744,8 +758,10 @@ async def test_run_job_emits_terminal_event(db_session: AsyncSession, patched_gi
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace([{"file": "src/a.py"}]),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(
-            workdir, port, diff=[{"file": "src/a.py"}]
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(
+                workdir, port, diff=[{"file": "src/a.py"}]
+            )
         ),
     )
     job = await svc.create_job(
@@ -921,7 +937,9 @@ async def test_run_job_pasa_el_token_al_push(db_session: AsyncSession, patched_g
     svc = services.ReviewService(
         db_session,
         workspace_svc=ws,
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port, diff=diff)
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.quality)
@@ -952,7 +970,9 @@ async def test_error_vacio_registra_al_menos_el_tipo(db_session: AsyncSession, m
     svc = services.ReviewService(
         db_session,
         workspace_svc=_FakeWorkspace(),
-        runner_class=lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port),
+        engine_factory=_engine_with(
+            lambda workdir, port, env=None: FakeOpencodeRunner(workdir, port)
+        ),
     )
     job = await svc.create_job(
         tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.docs)
@@ -1034,3 +1054,27 @@ async def test_clone_reutiliza_un_workspace_sucio(tmp_path, monkeypatch):
     assert segundo == primero
     assert not (segundo / "residuo.txt").exists(), "el workspace debe quedar limpio"
     assert (segundo / "app.py").exists()
+
+
+async def test_la_actividad_del_agente_llega_a_la_ui_sin_rafagas(monkeypatch):
+    """El agente lanza herramientas a rafagas: la UI recibe la primera al momento y
+    la ULTIMA al cerrar la ventana. Quedarse solo con la primera dejaba «Leyendo
+    a.py» en pantalla los 20 min que tardaba la suite lanzada justo despues."""
+    from src.agents.engine import Activity
+
+    sent: list[tuple] = []
+
+    async def fake_push(job_id, kind, data):
+        sent.append((kind, data))
+
+    monkeypatch.setattr(services, "push_event", fake_push)
+    monkeypatch.setattr(services, "ACTIVITY_THROTTLE_SECONDS", 0.2)
+    publish = services._activity_publisher(uuid.uuid4())
+    await publish(Activity("read", "a.py"))
+    await publish(Activity("read", "b.py"))
+    await publish(Activity("bash"))
+    assert sent == [("activity", {"tool": "read", "path": "a.py"})]
+
+    await asyncio.sleep(0.4)
+    assert sent[-1] == ("activity", {"tool": "bash", "path": None})
+    assert len(sent) == 2

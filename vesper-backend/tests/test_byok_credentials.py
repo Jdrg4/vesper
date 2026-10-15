@@ -484,3 +484,23 @@ async def test_el_default_del_tenant_lleva_proveedor(client: AsyncClient):
     r = await client.get("/api/v1/tenants/me", headers={"Cookie": a["cookie"]})
     assert r.json()["developer_model"] == "opencode-go/glm-5.2"
     assert r.json()["reviewer_model"] == "opencode-go/minimax-m3"
+
+
+def test_el_catalogo_no_ofrece_modelos_obsoletos():
+    """opencode oculta los `deprecated` de models.dev: ofrecerlos daba jobs que morian
+    con "Model not found" (deepseek-v4-flash, renombrado a deepseek-flash)."""
+    from src.agents.catalog import _trim
+
+    raw = {
+        "deepseek": {
+            "name": "DeepSeek",
+            "models": {
+                "deepseek-v4-flash": {"name": "V4 Flash", "status": "deprecated"},
+                "deepseek-flash": {"name": "Flash"},
+            },
+        },
+        "viejo": {"name": "Viejo", "models": {"m": {"status": "deprecated"}}},
+    }
+    catalogo = _trim(raw)
+    assert [m["id"] for m in catalogo["deepseek"]["models"]] == ["deepseek-flash"]
+    assert "viejo" not in catalogo

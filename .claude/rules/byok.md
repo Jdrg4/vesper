@@ -19,6 +19,8 @@ en total. No mantenemos ninguna lista: models.dev es la misma fuente que usa
 opencode, así que nunca ofrecemos un modelo que el runtime no sepa ejecutar
 (`src/agents/catalog.py`, cacheado 24 h, con semilla si el servicio no
 responde).
+Los modelos `status: "deprecated"` se filtran: `opencode` los oculta y un job con
+uno moría con «Model not found» (`deepseek-v4-flash`, renombrado a `deepseek-flash`).
 
 **Los modelos van en formato `proveedor/modelo`** (`opencode-go/glm-5.2`,
 `openai/gpt-5`). Sin el prefijo, `split_model` asume `opencode-go`. Defaults en

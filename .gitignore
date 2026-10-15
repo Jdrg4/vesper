@@ -72,3 +72,6 @@ _next.log
 # --- Preferencias personales de Claude Code (no se comparten) ---
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Resultados del banco de evals (se generan a mano y gastan saldo)
+vesper-backend/evals/results/

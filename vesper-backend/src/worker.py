@@ -65,7 +65,7 @@ class WorkerSettings:
     # Reintentar un job del agente es volver a gastar tokens del tenant y el
     # resultado no es determinista. Un fallo se queda en `failed`.
     max_tries = 1
-    job_timeout = 2 * 60 * 60 + 15 * 60  # el turno del agente (2 h) + clonar, validar y abrir el PR
+    job_timeout = 6 * 60 * 60 + 15 * 60  # el turno del agente (6 h) + clonar, validar y abrir el PR
 
     # Arq lo lee como ATRIBUTO (`redis_settings.host`): un metodo hacia morir al
     # worker al arrancar. Sin `REDIS_URL` (tests, dev) queda el default de Arq;

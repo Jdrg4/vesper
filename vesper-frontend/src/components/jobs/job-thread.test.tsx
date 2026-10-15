@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import type { Job } from "@/lib/jobs";
@@ -117,5 +117,40 @@ describe("JobThread", () => {
     render(<JobThread job={{ ...base, diff_summary: "No changes proposed." }} repoName="acme/api" onAbort={vi.fn()} />);
 
     expect(screen.getByText(/No encontré nada que cambiar/)).toBeInTheDocument();
+  });
+
+  it("en marcha: cuenta qué está haciendo el agente, y cierra el stream al terminar", () => {
+    const sources: FakeSource[] = [];
+    class FakeSource {
+      onmessage: ((e: { data: string }) => void) | null = null;
+      closed = false;
+      constructor(public url: string) {
+        sources.push(this);
+      }
+      close() {
+        this.closed = true;
+      }
+    }
+    vi.stubGlobal("EventSource", FakeSource);
+    const running = { ...base, status: "running" as const, completed_at: null };
+    const { rerender } = render(<JobThread job={running} repoName="acme/api" onAbort={vi.fn()} />);
+
+    expect(sources[0].url).toBe("/api/jobs/j1/events");
+    act(() => sources[0].onmessage?.({ data: JSON.stringify({ event: "activity", data: { tool: "edit", path: "src/app.py" } }) }));
+    expect(screen.getByText(/Editando/)).toHaveTextContent("Editando src/app.py");
+
+    act(() => sources[0].onmessage?.({ data: JSON.stringify({ event: "activity", data: { tool: "bash", path: null } }) }));
+    expect(screen.getByText(/Ejecutando un comando/)).toBeInTheDocument();
+
+    // El evento terminal llega antes que el sondeo cambie el estado: el stream se
+    // cierra ya, o EventSource reconectaria y volveria a bajar todo el historial.
+    act(() => sources[0].onmessage?.({ data: JSON.stringify({ event: "completed", data: {} }) }));
+    expect(sources[0].closed).toBe(true);
+    expect(sources).toHaveLength(1);
+
+    rerender(<JobThread job={{ ...running, status: "completed" }} repoName="acme/api" onAbort={vi.fn()} />);
+    expect(sources[0].closed).toBe(true);
+    expect(screen.queryByText(/Ejecutando un comando/)).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });

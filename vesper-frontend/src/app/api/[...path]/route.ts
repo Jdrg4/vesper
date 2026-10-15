@@ -57,7 +57,19 @@ async function proxy(request: NextRequest) {
     method: request.method,
     headers,
     body,
+    // Si el navegador se va (p. ej. cierra un SSE), la peticion al backend tambien.
+    signal: request.signal,
   });
+
+  // SSE (progreso del agente): se pasa el stream tal cual. Con `res.text()` el
+  // navegador no recibia nada hasta que el backend cerraba, minutos despues.
+  const contentType = res.headers.get("content-type") ?? "application/json";
+  if (contentType.startsWith("text/event-stream")) {
+    return new Response(res.body, {
+      status: res.status,
+      headers: { "Content-Type": contentType, "Cache-Control": "no-cache, no-transform" },
+    });
+  }
 
   const resBody = await res.text();
 

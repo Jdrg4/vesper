@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -52,6 +54,10 @@ class Settings(BaseSettings):
     # Agent runtime (F4+).
     opencode_bin: str = ""
     opencode_port_pool_start: int = 14096
+    # Motor del agente (F6a). Uno por instancia; los evals deciden si hace falta mas.
+    agent_engine: Literal["opencode"] = "opencode"
+    # Sin ningun evento de la sesion durante este tiempo, el agente se da por colgado.
+    agent_idle_timeout_seconds: int = 10 * 60
     # Raiz de los workspaces clonados, uno por (tenant, repo). El default es la
     # ruta del contenedor; en local se apunta a un directorio temporal, porque
     # `/var/...` no existe fuera de Linux.
