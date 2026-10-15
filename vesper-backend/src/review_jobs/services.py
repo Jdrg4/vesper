@@ -24,6 +24,7 @@ from src.agents.credentials import mark_used, resolve_credentials
 from src.agents.engine import Activity, AgentEngine
 from src.agents.opencode_engine import OpencodeEngine
 from src.agents.runner import split_model
+from src.agents.verification import SuiteRun, Verdict, Verification, verdict
 from src.core.config import settings
 from src.core.database import AsyncSessionLocal
 from src.core.exceptions import NotFoundError, QuotaExceededError, ValidationDomainError
@@ -509,7 +510,23 @@ _TASK_BODIES = {
 _DEFAULT_BODY = "Review the repository and propose improvements."
 
 
-def build_prompt(task_type: str, repo_name: str, ref: str, custom: str | None = None) -> str:
+_RUN_TESTS = "\n\nAntes de terminar, corre los tests del repo si existen y deja la suite en verde."
+
+
+def wants_tests() -> bool:
+    """Pedir tests solo si el motor corre en contenedor: con el motor local ejecutarían
+    código del repo del tenant en nuestro servidor."""
+    return settings.agent_engine == "docker"
+
+
+def build_prompt(
+    task_type: str,
+    repo_name: str,
+    ref: str,
+    custom: str | None = None,
+    *,
+    run_tests: bool = False,
+) -> str:
     """Preambulo comun + cuerpo (plantilla del task_type, o texto del usuario).
 
     Un `custom` en blanco cae a la plantilla: un textarea vacio no puede dejar
@@ -517,7 +534,8 @@ def build_prompt(task_type: str, repo_name: str, ref: str, custom: str | None = 
     """
     limpio = custom.strip() if custom else ""
     body = limpio or _TASK_BODIES.get(task_type, _DEFAULT_BODY)
-    return _PROMPT_PREAMBLE.format(repo_name=repo_name, ref=ref) + body
+    prompt = _PROMPT_PREAMBLE.format(repo_name=repo_name, ref=ref) + body
+    return prompt + _RUN_TESTS if run_tests else prompt
 
 
 _COMPILED_SECRET_PATTERNS = tuple(
@@ -570,11 +588,33 @@ def _diff_path(entry: dict) -> str:
     return entry.get("file") or entry.get("path") or "?"
 
 
-def _pr_body(task_type: str, model: str, summary: str) -> str:
+def _suite_mark(run: SuiteRun) -> str:
+    if run.timed_out:
+        return "⏱"
+    return "✅" if run.exit_code == 0 else "❌"
+
+
+def _verification_section(checks: Verification) -> str:
+    """Sección `## Verificación` del PR (solo si el motor verifica, `checks is not None`)."""
+    if not checks.commands:
+        return "## Verificación\n\nSin verificar: no se detectaron tests.\n\n"
+    cmds = ", ".join(f"`{c.test}`" for c in checks.commands)
+    out = (
+        f"## Verificación\n\nComandos: {cmds}\n\n"
+        f"- Antes: {_suite_mark(checks.before)}\n- Después: {_suite_mark(checks.after)}\n\n"
+    )
+    if verdict(checks) is Verdict.already_red:
+        out += "⚠️ La suite ya fallaba antes del cambio (ya fallaba en la rama base).\n\n"
+    return out
+
+
+def _pr_body(task_type: str, model: str, summary: str, checks: Verification | None = None) -> str:
     """Cuerpo del PR. Quien lo revisa necesita saber que lo escribio una maquina."""
+    section = _verification_section(checks) if checks is not None else ""
     return (
         f"Revisión automática de **Vesper** (`{task_type}`).\n\n"
         f"{summary}\n\n"
+        f"{section}"
         "---\n"
         f"Generado por un agente con el modelo `{model}`. "
         "Revisa el diff antes de mergear."
@@ -703,7 +743,9 @@ class ReviewService:
             # El modelo lo elige el tenant en su configuracion; hardcodearlo
             # dejaba a `developer_model` sin ningun efecto.
             model=tenant.developer_model,
-            prompt=build_prompt(data.task_type.value, repo.full_name, ref, data.prompt),
+            prompt=build_prompt(
+                data.task_type.value, repo.full_name, ref, data.prompt, run_tests=wants_tests()
+            ),
         )
         self.db.add(job)
         await self.db.flush()
@@ -758,13 +800,17 @@ class ReviewService:
 
             await push_event(job_id, "progress", {"message": "Starting agent..."})
 
-            prompt = job.prompt or build_prompt(job.task_type.value, repo.full_name, job.ref)
+            prompt = job.prompt or build_prompt(
+                job.task_type.value, repo.full_name, job.ref, run_tests=wants_tests()
+            )
             # `create_job` siempre puebla `prompt`; el fallback cubre jobs viejos,
             # que se escribieron cuando la columna admitia NULL.
 
             await push_event(job_id, "progress", {"message": "Agent reviewing..."})
             engine = self.engine_factory(str(job_id))
-            await engine.run(workdir, prompt, job.model, credentials, _activity_publisher(job_id))
+            result = await engine.run(
+                workdir, prompt, job.model, credentials, _activity_publisher(job_id)
+            )
             await mark_used(self.db, tenant_id, split_model(job.model)["providerID"])
 
             # El diff se lee del workspace con git, no de `GET /session/:id/diff`
@@ -779,6 +825,20 @@ class ReviewService:
                 job.completed_at = datetime.now(UTC)
                 await self.db.flush()
                 await push_event(job_id, "completed", {"summary": job.diff_summary})
+                return
+
+            checks = result.checks
+            if verdict(checks) is Verdict.broke:
+                # La suite pasaba antes y falla después: sin PR, y el log al usuario.
+                job.status = JobStatus.needs_review
+                job.diff_summary = f"{summary} WARNING: la suite pasaba y ahora falla"
+                job.error_message = {
+                    "error": "La suite de tests pasaba y ahora falla",
+                    "suite_log": checks.after.log_tail,
+                }
+                job.completed_at = datetime.now(UTC)
+                await self.db.flush()
+                await push_event(job_id, "needs_review", {"warning": job.diff_summary})
                 return
 
             if warning:
@@ -805,7 +865,7 @@ class ReviewService:
                 # PRs invalidos en repos con master/develop/trunk.
                 repo.default_branch,
                 f"[Vesper] {job.task_type.value}: improvements for {repo_name}",
-                _pr_body(job.task_type.value, job.model, summary),
+                _pr_body(job.task_type.value, job.model, summary, checks),
             )
 
             job.status = JobStatus.completed

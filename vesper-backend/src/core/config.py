@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     opencode_bin: str = ""
     opencode_port_pool_start: int = 14096
     # Motor del agente (F6a). Uno por instancia; los evals deciden si hace falta mas.
-    agent_engine: Literal["opencode"] = "opencode"
+    agent_engine: Literal["opencode", "docker"] = "opencode"
     # Sin ningun evento de la sesion durante este tiempo, el agente se da por colgado.
     agent_idle_timeout_seconds: int = 10 * 60
     # Raiz de los workspaces clonados, uno por (tenant, repo). El default es la
