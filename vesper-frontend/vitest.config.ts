@@ -9,9 +9,9 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     globals: true,
-    // F1: sin specs todavia. Pasar sin fallo para que CI no se caiga.
-    passWithNoTests: true,
-  },
+    // 5 s por defecto no alcanza para el primer import en frio (zod) en discos
+    // lentos con varios workers a la vez: `env.test.ts` fallaba solo por eso.
+    testTimeout: 20_000,  },
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),

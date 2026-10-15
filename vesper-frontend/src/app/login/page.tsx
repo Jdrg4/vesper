@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { safeNextPath } from "@/lib/safe-next";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,10 +21,11 @@ export default function LoginPage() {
       await api.post("/auth/login", { email, password });
       // El middleware manda aqui con `?next=` la ruta que se pedia. Se lee de
       // `window.location` y no con `useSearchParams` para no obligar a envolver
-      // la pagina en un Suspense. Solo rutas internas: un `next` con host
-      // ajeno convertiria el login en un redirector abierto.
+      // la pagina en un Suspense. `safeNextPath` solo deja pasar rutas del
+      // mismo origen: un `next` con host ajeno convertiria el login en un
+      // redirector abierto.
       const next = new URLSearchParams(window.location.search).get("next");
-      router.push(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
+      router.push(safeNextPath(next, window.location.origin));
     } catch {
       setError("Credenciales inválidas o error de conexión");
     } finally {

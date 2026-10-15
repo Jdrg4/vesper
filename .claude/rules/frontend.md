@@ -48,9 +48,8 @@ lleva `suppressHydrationWarning` porque next-themes reescribe `className` y
 - **`getByRole("button", {name})` de Playwright casa por substring.** Con los
   textos de `/repositories`, un `name: "Vigilar"` casa también con **"Dejar de
   vigilar"** y desenrola el repo en vez de crear la regla. Usar `exact: true`.
-- **El `.env.local` del frontend apunta al backend en el 8100**, no al 8000
-  (el 8000 lo ocupa otro proyecto de esta máquina). Levantar el backend en el
-  puerto que espera el frontend en vez de editar su `.env.local`.
+- **El backend debe estar en el puerto que dice `NEXT_PUBLIC_API_URL`** del
+  `.env.local`. Si lo cambias, levanta el backend ahí en vez de tocar el código.
 
 
 ## Deuda conocida de este tema
