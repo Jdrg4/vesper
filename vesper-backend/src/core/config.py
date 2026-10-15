@@ -1,4 +1,4 @@
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Valor de dev usado como default de `jwt_secret` para no romper la suite de
@@ -17,12 +17,18 @@ DEV_CREDENTIALS_KEY_DEFAULT = "change-me-credentials-encryption-key-dev"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://vesper:vesper@localhost:55432/vesper_dev"
-    jwt_secret: str = DEV_JWT_SECRET_DEFAULT
+    database_url: str = Field(
+        default="postgresql+asyncpg://vesper:vesper@localhost:55432/vesper_dev", repr=False
+    )
+    jwt_secret: str = Field(default=DEV_JWT_SECRET_DEFAULT, repr=False)
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     environment: str = "development"
+    # Registro abierto. Una instancia para uso propio lo cierra (`false`): hasta
+    # que cada job corra en su contenedor, el agente de otro tenant podria leer
+    # del disco los clones ajenos. La primera cuenta se permite siempre.
+    registration_enabled: bool = True
 
     # Redis (cola de jobs + pub/sub progreso del agente). Vacio = degrada con
     # gracia (sin scheduling ni SSE en vivo). Ver `CLAUDE.md` -> Trampas.
@@ -34,12 +40,12 @@ class Settings(BaseSettings):
     cors_origins: str = ""
 
     # Credenciales de IA de los tenants (BYOK). Ver `src/core/crypto.py`.
-    credentials_encryption_key: str = DEV_CREDENTIALS_KEY_DEFAULT
+    credentials_encryption_key: str = Field(default=DEV_CREDENTIALS_KEY_DEFAULT, repr=False)
 
     # Key de la instancia, para tenants que no han configurado la suya. Solo se
     # usa si el operador enciende el fallback: en una instancia compartida,
     # regalar el saldo propio a desconocidos debe ser una decision consciente.
-    opencode_zen_key: str = ""
+    opencode_zen_key: str = Field(default="", repr=False)
     opencode_zen_base_url: str = "https://opencode.ai/zen/go/v1"
     allow_instance_key_fallback: bool = False
 
@@ -54,10 +60,10 @@ class Settings(BaseSettings):
     # GitHub App (F3+).
     github_app_id: str = ""
     github_app_slug: str = ""
-    github_app_private_key: str = ""
+    github_app_private_key: str = Field(default="", repr=False)
     github_app_client_id: str = ""
-    github_app_client_secret: str = ""
-    github_webhook_secret: str = ""
+    github_app_client_secret: str = Field(default="", repr=False)
+    github_webhook_secret: str = Field(default="", repr=False)
 
     @property
     def cors_origins_list(self) -> list[str]:

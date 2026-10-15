@@ -7,7 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.schemas import RegisterRequest, TokenResponse
-from src.core.exceptions import DomainError, ValidationDomainError
+from src.core.config import settings
+from src.core.exceptions import DomainError, ForbiddenError, ValidationDomainError
 from src.core.security import (
     create_access_token,
     create_refresh_token,
@@ -37,6 +38,14 @@ async def register_tenant_with_admin(
     db: AsyncSession, data: RegisterRequest
 ) -> tuple[User, Tenant]:
     """Self-serve: crea tenant + primer user como tenant_admin en una transacción."""
+    if not settings.registration_enabled:
+        # Con el registro cerrado solo entra la primera cuenta: sin ella nadie
+        # podria usar la instancia recien desplegada. Consulta global a
+        # proposito (no `tenant_scoped_query`): pregunta si la INSTANCIA esta
+        # vacia y no devuelve datos de nadie.
+        has_users = (await db.execute(select(User.id).limit(1))).first() is not None
+        if has_users:
+            raise ForbiddenError("El registro está cerrado en esta instancia")
     email = data.email.lower().strip()
     exists = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if exists is not None:
