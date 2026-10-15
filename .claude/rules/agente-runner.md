@@ -27,6 +27,15 @@ GC puede matar el job a mitad de camino).
   que la instalación aparece en `GET /user/installations` de ese usuario. Falla
   cerrado.
 
+- **El runtime NO hereda el entorno del backend**: recibe una lista blanca
+  (`AGENT_ENV_ALLOWLIST` en `runner.py`). Con `os.environ` entero, un `env` dentro
+  del agente mostraba `CREDENTIALS_ENCRYPTION_KEY`, `DATABASE_URL`, `JWT_SECRET` y la
+  clave de la GitHub App: un prompt malicioso en el repo del tenant se llevaba las
+  credenciales de todos. Si `opencode` necesita otra variable, se añade a la lista;
+  nunca se vuelve a copiar el entorno.
+- **Requiere `opencode-ai` 1.x** (verificado con 1.19.0), fijado con `OPENCODE_BIN`.
+  `@opencode/cli` 2.x quitó `--pure` y cambió la API: `opencode serve --pure` imprime
+  la ayuda y sale, y el job falla con un timeout de arranque que no dice por qué.
 - **`opencode serve` usa un pool de puertos (14096+), uno por job.** Matarlos
   por PID concreto al cierre; nunca genérico.
 - **`opencode` usa `~/.local/share/opencode/` salvo que le redirijas
@@ -73,8 +82,10 @@ GC puede matar el job a mitad de camino).
   password aleatorio por job, pero **esto refuerza que el sandbox por job es
   obligatorio**: el código del repo del tenant corre junto al runtime.
 
-- **Modelo de sandbox del agent runner sin decidir**: contenedor por job
-  (DinD/gVisor) vs. namespace Linux.
+- **Sin aislamiento de sistema de archivos por job** (lo resuelve F6b): el agente
+  puede leer otros workspaces y el disco del servidor. Los secretos del backend ya no
+  están a su alcance (lista blanca de entorno), pero las credenciales del propio job
+  y los clones de otros tenants sí, hasta que cada job corra en su contenedor.
 
 - **Persistencia de opencode por job:** queremos efímero. Definir si hace falta
   volumen efímero o `--no-state`.

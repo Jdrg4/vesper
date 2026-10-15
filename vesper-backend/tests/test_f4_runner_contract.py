@@ -207,8 +207,41 @@ async def test_start_sets_server_password_env(monkeypatch):
     await r.start()
 
     assert captured["env"]["OPENCODE_SERVER_PASSWORD"] == r.server_password
-    # El resto del entorno debe conservarse (auth de opencode, PATH, etc.).
+    # Lo minimo para que el proceso arranque si se conserva.
     assert "PATH" in captured["env"] or "Path" in captured["env"]
+
+
+async def test_start_no_hereda_los_secretos_del_backend(monkeypatch):
+    """El agente ejecuta comandos y scripts del repo del tenant: todo lo que haya
+    en su entorno es legible por un prompt malicioso (`env`, `/proc/<pid>/environ`).
+    Con `os.environ` entero se llevaba la clave que descifra las credenciales de
+    TODOS los tenants, la URL de la BD y la clave privada de la GitHub App."""
+    captured = {}
+
+    async def _fake_exec(*args, **kwargs):
+        captured["env"] = kwargs.get("env")
+
+        class _P:
+            returncode = None
+
+        return _P()
+
+    from src.agents import runner as runner_mod
+
+    for name in (
+        "CREDENTIALS_ENCRYPTION_KEY",
+        "DATABASE_URL",
+        "JWT_SECRET",
+        "GITHUB_APP_PRIVATE_KEY",
+        "OPENCODE_ZEN_KEY",
+    ):
+        monkeypatch.setenv(name, "secreto-del-backend")
+    monkeypatch.setattr(runner_mod.asyncio, "create_subprocess_exec", _fake_exec)
+    r = OpencodeRunner("/tmp/ws", 14096, {"XDG_DATA_HOME": "/tmp/job/data"})
+    await r.start()
+
+    assert "secreto-del-backend" not in captured["env"].values()
+    assert captured["env"]["XDG_DATA_HOME"] == "/tmp/job/data"
 
 
 async def test_requests_authenticate_with_basic_auth():

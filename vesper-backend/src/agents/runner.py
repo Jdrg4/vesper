@@ -42,6 +42,38 @@ def resolve_opencode_bin() -> str:
     return "opencode"
 
 
+# Lo unico del entorno del backend que hereda el runtime del agente: lo justo para
+# que el proceso arranque y resuelva binarios, temporales y proxy. Todo lo demas
+# (DATABASE_URL, JWT_SECRET, CREDENTIALS_ENCRYPTION_KEY, la clave de la GitHub
+# App...) quedaria al alcance de un prompt malicioso del repo del tenant.
+AGENT_ENV_ALLOWLIST = (
+    "PATH",
+    "PATHEXT",
+    "HOME",
+    "USERPROFILE",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "COMSPEC",
+    "WINDIR",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "XDG_CACHE_HOME",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "NODE_EXTRA_CA_CERTS",
+)
+
+
+def agent_base_env() -> dict[str, str]:
+    """Entorno minimo del runtime: lista blanca, nunca una copia de `os.environ`."""
+    return {k: os.environ[k] for k in AGENT_ENV_ALLOWLIST if k in os.environ}
+
+
 def split_model(model: str) -> dict[str, str]:
     """Convierte el modelo del tenant al objeto que espera el runtime.
 
@@ -86,7 +118,7 @@ class OpencodeRunner:
 
     async def start(self) -> None:
         env = {
-            **os.environ,
+            **agent_base_env(),
             "OPENCODE_SERVER_PASSWORD": self.server_password,
             **self.env_overrides,
         }
