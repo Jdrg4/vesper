@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { AppNav } from "@/components/app-nav";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -193,11 +194,9 @@ export default function SettingsPage() {
 
   return (
     <main className="min-h-screen p-8 max-w-3xl mx-auto space-y-10">
-      <div className="flex items-center justify-between">
+      <div className="space-y-4">
+        <AppNav />
         <h1 className="text-2xl font-semibold">Ajustes</h1>
-        <Link href="/dashboard" className="text-sm text-muted-foreground underline">
-          Volver
-        </Link>
       </div>
 
       <section className="space-y-4">

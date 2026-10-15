@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { AppNav } from "@/components/app-nav";
 import { api } from "@/lib/api";
 
 interface Tenant {
@@ -55,15 +55,11 @@ export default function DashboardPage() {
       <div className="w-full max-w-sm space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Vesper</h1>
-          <div className="flex items-center gap-4">
-            <Link href="/settings" className="text-sm text-muted-foreground underline">
-              Ajustes
-            </Link>
-            <button onClick={handleLogout} className="text-sm text-muted-foreground underline">
-              Salir
-            </button>
-          </div>
+          <button onClick={handleLogout} className="text-sm text-muted-foreground underline">
+            Salir
+          </button>
         </div>
+        <AppNav />
         <div className="rounded-lg border p-4 space-y-3">
           <div>
             <span className="text-xs text-muted-foreground">Workspace</span>

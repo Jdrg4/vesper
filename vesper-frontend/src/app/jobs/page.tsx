@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppNav } from "@/components/app-nav";
 import { api } from "@/lib/api";
 
 const MAX_PROMPT = 4000;
@@ -79,7 +80,8 @@ export default function JobsPage() {
 
   return (
     <main className="min-h-screen p-8 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-semibold mb-6">Jobs</h1>
+      <AppNav />
+      <h1 className="text-2xl font-semibold mb-6 mt-4">Jobs</h1>
 
       <div className="flex gap-3 mb-8 flex-wrap">
         <select

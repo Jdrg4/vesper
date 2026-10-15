@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AppNav } from "@/components/app-nav";
 import { WatchRules } from "@/components/watch-rules";
 import { api } from "@/lib/api";
 
@@ -138,7 +139,8 @@ export default function RepositoriesPage() {
 
   return (
     <main className="min-h-screen p-8 max-w-3xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <AppNav />
+      <div className="flex items-center justify-between mb-6 mt-4">
         <h1 className="text-2xl font-semibold">Repositorios</h1>
         <button
           onClick={handleSync}
@@ -155,12 +157,12 @@ export default function RepositoriesPage() {
           <div className="space-y-2">
             {enrolled.map((repo) => (
               <div key={repo.id} className="rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{repo.full_name}</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium" title={repo.full_name}>{repo.full_name}</p>
                     <p className="text-xs text-muted-foreground">{repo.default_branch}</p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex shrink-0 items-center gap-3">
                     <button
                       onClick={() => setOpenRules(openRules === repo.id ? null : repo.id)}
                       className="text-xs underline"
@@ -194,16 +196,16 @@ export default function RepositoriesPage() {
           <h2 className="text-sm font-medium text-muted-foreground mb-3">Disponibles</h2>
           <div className="space-y-2">
             {available.map((repo) => (
-              <div key={repo.id} className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <p className="font-medium">{repo.full_name}</p>
+              <div key={repo.id} className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <p className="truncate font-medium" title={repo.full_name}>{repo.full_name}</p>
                   <p className="text-xs text-muted-foreground">
                     {repo.private ? "Privado" : "Publico"} · {repo.default_branch}
                   </p>
                 </div>
                 <button
                   onClick={() => handleToggle(repo)}
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
+                  className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
                 >
                   Vigilar
                 </button>
