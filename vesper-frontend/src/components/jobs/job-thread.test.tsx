@@ -142,6 +142,12 @@ describe("JobThread", () => {
     act(() => sources[0].onmessage?.({ data: JSON.stringify({ event: "activity", data: { tool: "bash", path: null } }) }));
     expect(screen.getByText(/Ejecutando un comando/)).toBeInTheDocument();
 
+    // El evento terminal llega antes que el sondeo cambie el estado: el stream se
+    // cierra ya, o EventSource reconectaria y volveria a bajar todo el historial.
+    act(() => sources[0].onmessage?.({ data: JSON.stringify({ event: "completed", data: {} }) }));
+    expect(sources[0].closed).toBe(true);
+    expect(sources).toHaveLength(1);
+
     rerender(<JobThread job={{ ...running, status: "completed" }} repoName="acme/api" onAbort={vi.fn()} />);
     expect(sources[0].closed).toBe(true);
     expect(screen.queryByText(/Ejecutando un comando/)).not.toBeInTheDocument();

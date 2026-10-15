@@ -77,8 +77,9 @@ async def run_task(
 
     try:
         result = await engine.run(workdir, task.prompt, model, credentials, ignore)
-    except RuntimeError as exc:
-        detail = str(exc)
+    except Exception as exc:
+        # Un motor que revienta suspende su tarea; no tumba el resto del banco.
+        detail = str(exc) or repr(exc)
     finally:
         await engine.stop()
 

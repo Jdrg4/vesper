@@ -55,6 +55,8 @@ def release_port(port: int) -> None:
 # ------------------------------------------------------------  Motor
 # Cuanto se espera al `session.error` que explica un turno fallido.
 ERROR_GRACE_SECONDS = 5.0
+# Cuanto espera el turno a que el SSE este conectado.
+CONNECT_GRACE_SECONDS = 5.0
 
 
 class OpencodeEngine:
@@ -106,9 +108,11 @@ class OpencodeEngine:
         busy: set[str] = set()
         model_error: list[str] = []
         got_error = asyncio.Event()
+        connected = asyncio.Event()
 
         async def handle(ev: dict) -> None:
             nonlocal last_sign
+            connected.set()
             if event_session(ev) != session_id:
                 # Heartbeats y eventos globales: llegan igual con el agente colgado.
                 return
@@ -138,17 +142,33 @@ class OpencodeEngine:
                 result.cost += part.get("cost") or 0.0
             activity = tool_activity(ev, workdir)
             if activity is not None:
-                await on_activity(activity)
+                try:
+                    await on_activity(activity)
+                except Exception as exc:
+                    # La actividad es cosmetica: un corte de Redis no puede tumbar el job.
+                    logger.warning(
+                        "agent_activity_publish_failed", job_id=self.job_id, error=str(exc)
+                    )
 
         async def listen() -> None:
             # Una reconexion si el SSE se cae; si vuelve a caer, el reloj de
             # inactividad sigue corriendo y acaba cortando (falla cerrado).
             for _attempt in range(2):
-                with contextlib.suppress(httpx.HTTPError):
+                try:
                     async for ev in self._runner.stream_events(self._client):
                         await handle(ev)
+                except Exception as exc:
+                    logger.warning("agent_events_dropped", job_id=self.job_id, error=str(exc))
+                finally:
+                    # Los `completed` perdidos con el stream no volveran: sin esto
+                    # el reloj quedaba pausado para siempre.
+                    busy.clear()
 
         listener = asyncio.create_task(listen())
+        # El turno espera a que el SSE este conectado: un modelo que falla al
+        # instante emite su `session.error` enseguida y se perderia.
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(connected.wait(), CONNECT_GRACE_SECONDS)
         turn = asyncio.create_task(
             self._runner.send_prompt(self._client, session_id, prompt, model)
         )
@@ -174,8 +194,7 @@ class OpencodeEngine:
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(got_error.wait(), ERROR_GRACE_SECONDS)
         listener.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await listener
+        await asyncio.gather(listener, return_exceptions=True)
         try:
             turn.result()
         except httpx.HTTPStatusError:
@@ -194,14 +213,20 @@ class OpencodeEngine:
         self._stopped = True
         for task in self._tasks:
             task.cancel()
-        for task in self._tasks:
-            with contextlib.suppress(BaseException):
-                await task
-        if self._client is not None:
-            await self._client.aclose()
-        if self._runner is not None:
-            await self._runner.stop()
-        if self._port is not None:
-            release_port(self._port)
-        if self._sandbox is not None:
-            await self._sandbox.cleanup()
+        # `gather` y no `suppress(BaseException)`: si es al propio `stop` a quien
+        # cancelan (el job_timeout de arq), el CancelledError tiene que subir.
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+        try:
+            if self._client is not None:
+                await self._client.aclose()
+        finally:
+            try:
+                if self._runner is not None:
+                    await self._runner.stop()
+            finally:
+                if self._port is not None:
+                    release_port(self._port)
+                # Despues de parar el runtime: mientras vivia tenia el auth.json
+                # abierto, y en Windows eso impide borrarlo.
+                if self._sandbox is not None:
+                    await self._sandbox.cleanup()

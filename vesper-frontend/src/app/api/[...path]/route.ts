@@ -57,6 +57,8 @@ async function proxy(request: NextRequest) {
     method: request.method,
     headers,
     body,
+    // Si el navegador se va (p. ej. cierra un SSE), la peticion al backend tambien.
+    signal: request.signal,
   });
 
   // SSE (progreso del agente): se pasa el stream tal cual. Con `res.text()` el

@@ -80,7 +80,8 @@ def _relative(file: str | None, workdir: Path) -> str | None:
     if not file:
         return None
     try:
-        return Path(file).resolve().relative_to(workdir.resolve()).as_posix()
+        # Una ruta absoluta en `file` ignora `workdir` al unirlas: la proteccion es la misma.
+        return (workdir / file).resolve().relative_to(workdir.resolve()).as_posix()
     except ValueError:
         # Fuera del workspace: la ruta absoluta enseñaria el disco del servidor.
         return None

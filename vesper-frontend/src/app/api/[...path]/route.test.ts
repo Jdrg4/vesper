@@ -125,4 +125,15 @@ describe("proxy /api/[...path]", () => {
     const { value } = await reader.read();
     expect(new TextDecoder().decode(value)).toContain('"activity"');
   });
+
+  it("corta la peticion al backend cuando el navegador se va", async () => {
+    // Sin `signal`, cerrar la pestaña dejaba al backend sondeando el bus 10 min.
+    const fetchSpy = mockBackend(200, "{}");
+    const request = new NextRequest(new URL("/api/jobs/j1/events", ORIGIN));
+
+    await GET(request);
+
+    const [, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.signal).toBe(request.signal);
+  });
 });

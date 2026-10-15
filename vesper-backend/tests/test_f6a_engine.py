@@ -83,3 +83,12 @@ async def test_fake_engine_puede_fallar(tmp_path):
 
     with pytest.raises(RuntimeError, match="boom"):
         await FakeEngine(error="boom").run(tmp_path, "p", "m", {}, noop)
+
+
+def test_una_ruta_relativa_se_lee_contra_el_workspace():
+    ev = _tool("running", file="src/app.py")
+    assert tool_activity(ev, WORKDIR) == Activity("edit", "src/app.py")
+
+
+def test_una_ruta_relativa_que_escapa_no_se_reenvia():
+    assert tool_activity(_tool("running", file="../otro/x.py"), WORKDIR) == Activity("edit")

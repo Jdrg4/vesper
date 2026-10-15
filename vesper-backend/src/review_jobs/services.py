@@ -589,17 +589,38 @@ def _diff_summary(diffs: list[dict]) -> str:
 
 
 def _activity_publisher(job_id: uuid.UUID):
-    """Reenvia al SSE lo que hace el agente, como mucho una vez cada
-    `ACTIVITY_THROTTLE_SECONDS`."""
-    last_sent = -ACTIVITY_THROTTLE_SECONDS
+    """Reenvia al SSE lo que hace el agente: la primera actividad de una rafaga al
+    momento y la ultima al cerrar la ventana de `ACTIVITY_THROTTLE_SECONDS`.
+
+    Quedarse solo con la primera dejaba en pantalla «Leyendo a.py» durante los
+    minutos que tardaba la suite lanzada justo despues.
+    """
+    last_sent = -float("inf")
+    latest: Activity | None = None
+    trailing: asyncio.Task | None = None
+
+    async def send(activity: Activity) -> None:
+        nonlocal last_sent
+        last_sent = time.monotonic()
+        await push_event(job_id, "activity", {"tool": activity.tool, "path": activity.path})
+
+    async def flush(delay: float) -> None:
+        nonlocal trailing
+        await asyncio.sleep(delay)
+        trailing = None
+        if latest is not None:
+            await send(latest)
 
     async def publish(activity: Activity) -> None:
-        nonlocal last_sent
-        now = time.monotonic()
-        if now - last_sent < ACTIVITY_THROTTLE_SECONDS:
+        nonlocal latest, trailing
+        wait = last_sent + ACTIVITY_THROTTLE_SECONDS - time.monotonic()
+        if wait <= 0 and trailing is None:
+            latest = None
+            await send(activity)
             return
-        last_sent = now
-        await push_event(job_id, "activity", {"tool": activity.tool, "path": activity.path})
+        latest = activity
+        if trailing is None:
+            trailing = asyncio.create_task(flush(max(wait, 0)))
 
     return publish
 

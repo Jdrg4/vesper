@@ -72,3 +72,13 @@ async def test_un_motor_que_falla_suspende_y_dice_por_que():
 @pytest.mark.parametrize("task", TASKS, ids=lambda t: t.name)
 def test_cada_tarea_tiene_prompt(task):
     assert task.prompt.strip()
+
+
+async def test_un_motor_que_revienta_con_otra_excepcion_no_tumba_el_banco():
+    class Exploding(FakeEngine):
+        async def run(self, *args, **kwargs):
+            raise ValueError("500 crudo")
+
+    row = await _run("bug-suma", Exploding())
+    assert not row.passed
+    assert "500 crudo" in row.detail

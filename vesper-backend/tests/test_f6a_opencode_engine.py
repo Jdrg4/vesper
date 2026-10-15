@@ -36,12 +36,14 @@ HEARTBEAT = {"type": "server.heartbeat", "properties": {}}
 class ScriptedRunner(FakeOpencodeRunner):
     """`script`: lista de (segundos de espera, evento). El turno dura `turn` s."""
 
-    def __init__(self, workdir, port, env=None, *, script=(), turn=0.0, fail=None):
+    def __init__(self, workdir, port, env=None, *, script=(), turn=0.0, fail=None, close=False):
         super().__init__(workdir, port)
         self.script = list(script)
         self.turn = turn
         self.fail = fail
+        self.close = close  # el SSE se corta tras el guion y no vuelve
         self.stops = 0
+        self.streams = 0
 
     async def stop(self):
         self.stops += 1
@@ -53,10 +55,16 @@ class ScriptedRunner(FakeOpencodeRunner):
         return {"info": {}, "parts": []}
 
     async def stream_events(self, client):
+        self.streams += 1
+        if self.close and self.streams > 1:
+            return
+        # Como opencode real: lo primero que llega al suscribirse.
+        yield {"type": "server.connected", "properties": {}}
         for delay, ev in self.script:
             await asyncio.sleep(delay)
             yield ev
-        await asyncio.Event().wait()
+        if not self.close:
+            await asyncio.Event().wait()
 
 
 def _engine(tmp_path, runner, idle=0.3):
@@ -185,3 +193,49 @@ async def test_el_motivo_del_500_se_espera_aunque_llegue_despues(tmp_path, repo)
     runner = ScriptedRunner(str(repo), 0, script=[(0.3, err)], turn=0.05, fail=fail)
     with pytest.raises(RuntimeError, match="Model not found: deepseek/x"):
         await _collect(_engine(tmp_path, runner), tmp_path)
+
+
+async def test_si_publicar_la_actividad_falla_el_job_sigue(tmp_path, repo):
+    """Un corte de Redis al publicar la actividad (cosmetica) tumbaba el listener y,
+    al acabar, el job fallaba aunque el agente hubiera terminado bien."""
+    script = [(0, _tool("running", file=str(repo / "a.py"))), (0, _step(1, 1, 0.1))]
+    runner = ScriptedRunner(str(repo), 0, script=script, turn=0.3)
+    engine = _engine(tmp_path, runner)
+
+    async def broken(_):
+        raise ConnectionError("redis caido")
+
+    try:
+        result = await engine.run(repo, "p", "deepseek/x", {}, broken)
+    finally:
+        await engine.stop()
+    assert result.tokens_input == 1
+
+
+async def test_si_el_sse_se_corta_con_una_herramienta_en_marcha_el_corte_sigue_vivo(tmp_path, repo):
+    """El `completed` de la herramienta se pierde con el SSE: sin limpiar `busy` el
+    reloj quedaba pausado para siempre y el job llegaba al techo de 6 h."""
+    script = [(0, _tool("running", tool="bash"))]
+    runner = ScriptedRunner(str(repo), 0, script=script, turn=60, close=True)
+    with pytest.raises(RuntimeError, match="no dio señales de vida"):
+        await asyncio.wait_for(_collect(_engine(tmp_path, runner), tmp_path), 5)
+
+
+async def test_un_error_inmediato_no_se_pierde_por_suscribirse_tarde(tmp_path, repo):
+    """El turno no empieza hasta que el SSE esta conectado: si el modelo falla al
+    instante, su `session.error` ya tiene quien lo escuche."""
+    order: list[str] = []
+
+    class Ordered(ScriptedRunner):
+        async def send_prompt(self, client, session_id, prompt, model="m"):
+            order.append("turn")
+            return await super().send_prompt(client, session_id, prompt, model)
+
+        async def stream_events(self, client):
+            async for ev in super().stream_events(client):
+                order.append(ev["type"])
+                yield ev
+
+    runner = Ordered(str(repo), 0, turn=0)
+    await _collect(_engine(tmp_path, runner), tmp_path)
+    assert order[:2] == ["server.connected", "turn"]

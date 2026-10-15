@@ -1057,7 +1057,9 @@ async def test_clone_reutiliza_un_workspace_sucio(tmp_path, monkeypatch):
 
 
 async def test_la_actividad_del_agente_llega_a_la_ui_sin_rafagas(monkeypatch):
-    """El agente lanza herramientas a rafagas; la UI recibe una cada pocos segundos."""
+    """El agente lanza herramientas a rafagas: la UI recibe la primera al momento y
+    la ULTIMA al cerrar la ventana. Quedarse solo con la primera dejaba «Leyendo
+    a.py» en pantalla los 20 min que tardaba la suite lanzada justo despues."""
     from src.agents.engine import Activity
 
     sent: list[tuple] = []
@@ -1066,8 +1068,13 @@ async def test_la_actividad_del_agente_llega_a_la_ui_sin_rafagas(monkeypatch):
         sent.append((kind, data))
 
     monkeypatch.setattr(services, "push_event", fake_push)
+    monkeypatch.setattr(services, "ACTIVITY_THROTTLE_SECONDS", 0.2)
     publish = services._activity_publisher(uuid.uuid4())
-    for name in ("a.py", "b.py", "c.py"):
-        await publish(Activity("read", name))
-
+    await publish(Activity("read", "a.py"))
+    await publish(Activity("read", "b.py"))
+    await publish(Activity("bash"))
     assert sent == [("activity", {"tool": "read", "path": "a.py"})]
+
+    await asyncio.sleep(0.4)
+    assert sent[-1] == ("activity", {"tool": "bash", "path": None})
+    assert len(sent) == 2

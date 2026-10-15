@@ -19,6 +19,9 @@ function duration(job: Job): string | null {
 
 type Activity = { tool: string; path: string | null };
 
+// Los mismos que `TERMINAL_EVENTS` del backend (review_jobs/services.py).
+const TERMINAL_EVENTS = new Set(["completed", "error", "needs_review"]);
+
 const VERBS: Record<string, string> = {
   read: "Leyendo",
   edit: "Editando",
@@ -45,6 +48,9 @@ function useActivity(jobId: string, running: boolean): Activity | null {
       try {
         const msg = JSON.parse(e.data) as { event: string; data: Activity };
         if (msg.event === "activity") setActivity(msg.data);
+        // Job terminado: sin cerrar, EventSource reconectaria y bajaria de nuevo
+        // todo el historial. El `timeout` del backend no cierra: el job sigue.
+        else if (TERMINAL_EVENTS.has(msg.event)) source.close();
       } catch {
         // Un evento malformado no debe tumbar el hilo.
       }
