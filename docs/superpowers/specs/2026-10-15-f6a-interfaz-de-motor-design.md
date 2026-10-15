@@ -52,7 +52,7 @@ class AgentEngine(Protocol):
     async def stop(self) -> None: ...
 ```
 
-- `Activity` = `{kind, tool, path, message}`; todos opcionales salvo `kind`.
+- `Activity` = `{tool, path}`; `path` relativa al workdir u opcional.
 - **El motor no toca git ni GitHub.** Clonar, capturar el diff, `validate_diff`, commit,
   push y PR siguen en `services.py`, iguales para todos los motores. Así la seguridad del
   flujo (`validate_diff`, `EPHEMERAL_PATTERNS`, token fuera de `.git/config`) no depende
@@ -107,14 +107,16 @@ emite, este apartado se rediseña antes de escribir código.
 ## 5. Progreso visible
 
 `on_activity` publica en el bus existente un evento SSE nuevo `activity`
-(`{tool, path, message}`):
+(`{tool, path}`):
 
 - **Throttle**: como mucho uno cada 3 s por job; el reloj de inactividad se reinicia con
   todos, el reenvío solo con los que pasan el throttle.
-- **Redacción**: `message` pasa por `SECRET_PATTERNS` y se trunca a 200 caracteres. Las
-  rutas se dan relativas al workspace (nunca la ruta del servidor).
+- **Sin texto libre**: solo el nombre de la herramienta y la ruta relativa al workspace
+  (`None` si cae fuera). Ni texto del modelo ni argumentos de búsqueda, así que no hay nada
+  que redactar. Las rutas nunca son las del servidor.
 - **No se persiste** en base de datos: es progreso en vivo. La tabla de pasos de la spec
   vieja queda fuera.
+- El proxy de Next pasa los `text/event-stream` sin bufferizar.
 
 Frontend: `job-thread` muestra la última actividad («Editando `src/app.py`») debajo del
 estado mientras el job está `running`. Sin actividad recibida, se queda como hoy.
@@ -178,7 +180,7 @@ evals/
 ## 10. Criterios de cierre
 
 1. Un job real en producción abre un PR pasando por `OpencodeEngine`.
-2. `services.py` no importa nada de `runner.py` ni de `sandbox.py`.
+2. `services.py` no importa `OpencodeRunner` ni `AgentSandbox` (solo `split_model`).
 3. El corte por inactividad está cubierto por test y verificado con el `opencode` real
    (la primera tarea del plan).
 4. El hilo del job muestra actividad en vivo en producción.

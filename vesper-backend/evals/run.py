@@ -25,6 +25,7 @@ from pathlib import Path
 from evals.tasks import FIXTURE, TASKS, EvalTask
 from src.agents.engine import Activity, AgentEngine, EngineResult
 from src.agents.opencode_engine import OpencodeEngine
+from src.review_jobs.constants import EPHEMERAL_PATTERNS
 
 EngineFactory = Callable[[str], AgentEngine]
 
@@ -60,6 +61,10 @@ async def run_task(
     workdir = base / "repo"
     shutil.copytree(FIXTURE, workdir)
     _git(workdir, "init", "-q")
+    # Como el flujo real: lo que genera el entorno (.pyc, caches) no cuenta como cambio.
+    (workdir / ".git" / "info" / "exclude").write_text(
+        "\n".join(EPHEMERAL_PATTERNS) + "\n", encoding="utf-8"
+    )
     _git(workdir, "add", "-A")
     _git(workdir, "commit", "-q", "-m", "fixture")
 
@@ -82,7 +87,8 @@ async def run_task(
         _git(workdir, "add", "-A")
         diff = _git(workdir, "diff", "--cached")
         passed = task.check(workdir, diff)
-        detail = "" if passed else "la comprobación no se cumplió"
+        changed = _git(workdir, "diff", "--cached", "--name-only").split()
+        detail = "" if passed else f"no se cumplió; cambió: {', '.join(changed) or 'nada'}"
     shutil.rmtree(base, ignore_errors=True)
     return Row(
         task=task.name,

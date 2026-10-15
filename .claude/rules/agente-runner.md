@@ -65,6 +65,32 @@ GC puede matar el job a mitad de camino).
   en código.
 
 
+## Motor del agente (F6a)
+
+- **`services.py` no conoce `opencode`**: pide un `AgentEngine` a `engine_factory`
+  (`src/agents/engine.py`). `OpencodeEngine` (`opencode_engine.py`) junta pool de puertos,
+  `AgentSandbox`, proceso, password y sesión. El motor no toca git ni GitHub: clonar,
+  `validate_diff`, commit y PR siguen en `services.py`, iguales para cualquier motor.
+- **Corte por inactividad**, no por reloj: cada evento SSE **de la sesión del job** reinicia
+  un reloj de `AGENT_IDLE_TIMEOUT_SECONDS` (10 min). `server.heartbeat`, `plugin.added` y
+  demás eventos globales no llevan sesión y **no cuentan**: siguen llegando con el agente
+  colgado. Una herramienta en `pending`/`running` pausa el reloj (una suite larga dentro de
+  `bash` no emite nada hasta acabar). El techo de 6 h queda de red de seguridad.
+- **Forma de los eventos** (opencode 1.19.0): herramienta = `message.part.updated` con
+  `part.type == "tool"`, `part.tool`, `part.state.status`, `part.state.input.filePath`
+  **absoluta**; texto = `message.part.delta`; tokens y coste en `part.type == "step-finish"`.
+  A la UI solo va `{tool, path relativa}`: nunca texto del modelo ni rutas del servidor.
+- **Un modelo que el runtime no conoce da un 500 genérico** en `POST /message`; el motivo
+  («Model not found: …») solo llega por el evento `session.error`, y el motor lo usa como
+  mensaje del job. Pasa con modelos recién publicados: el catálogo de `opencode` es un caché
+  de models.dev (`XDG_CACHE_HOME/opencode/models.json`) que se refresca solo y puede ir
+  por detrás del de Vesper durante un rato.
+- **El SSE pasa por el proxy de Next sin bufferizar** (`text/event-stream`); con
+  `res.text()` la UI no recibía nada hasta el final.
+- **Banco de evals**: `python -m evals.run --model <proveedor/modelo>` con
+  `VESPER_EVAL_CREDENTIALS="proveedor=key"`. Gasta saldo y ejecuta código que escribe el
+  modelo sobre el fixture: solo a mano, nunca en CI.
+
 ## Deuda conocida de este tema
 
 - **El installation token sigue apareciendo en la línea de comandos del push.**
