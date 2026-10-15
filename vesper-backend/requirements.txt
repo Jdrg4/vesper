@@ -14,6 +14,8 @@ cryptography>=44,<50
 passlib[argon2]==1.7.*
 structlog==24.*
 httpx==0.27.*
+# Motor "docker" (F6b): un contenedor sin privilegios por job, en un host de Docker aparte.
+docker==7.1.*
 websockets==16.*
 redis==5.*
 # Cola de jobs (F5). El worker corre aparte: `arq src.worker.WorkerSettings`.
