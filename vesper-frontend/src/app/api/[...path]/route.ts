@@ -11,6 +11,8 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const BACKEND_URL = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:8000";
 
+const GITHUB_WEBHOOK_HEADERS = ["X-Hub-Signature-256", "X-GitHub-Event", "X-GitHub-Delivery"];
+
 export async function GET(request: NextRequest) {
   return proxy(request);
 }
@@ -36,15 +38,20 @@ async function proxy(request: NextRequest) {
   const url = `${BACKEND_URL}${path}${request.nextUrl.search}`;
 
   const headers = new Headers();
-  headers.set("Content-Type", "application/json");
+  headers.set("Content-Type", request.headers.get("content-type") ?? "application/json");
 
   // Reenviar cookies del navegador al backend (httpOnly)
   const cookie = request.headers.get("cookie") ?? "";
   if (cookie) headers.set("Cookie", cookie);
 
-  const body = ["GET", "HEAD"].includes(request.method)
-    ? undefined
-    : JSON.stringify(await request.json().catch(() => ({})));
+  // Webhooks de GitHub: la firma HMAC va en cabecera y cubre los bytes exactos
+  // del cuerpo. Por eso el cuerpo se reenvia tal cual, sin parsear ni re-serializar.
+  for (const name of GITHUB_WEBHOOK_HEADERS) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+
+  const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer();
 
   const res = await fetch(url, {
     method: request.method,

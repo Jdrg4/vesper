@@ -16,6 +16,37 @@ def _un() -> str:
 
 
 # ------------------------------------------------------------------  Register
+def _register_payload() -> dict:
+    return {
+        "email": f"new-{_un()}@example.com",
+        "password": "changeme123",
+        "full_name": "New Admin",
+        "tenant_name": "My Workspace",
+        "tenant_slug": f"ws-{_un()}",
+    }
+
+
+async def test_register_cerrado_permite_solo_la_primera_cuenta(client: AsyncClient, monkeypatch):
+    """Una instancia autoalojada para uso propio cierra el registro: hasta que el
+    agente corra en un contenedor por job, otro tenant podria leer del disco los
+    clones del duenio. La primera cuenta si se permite, o nadie podria entrar."""
+    from src.core.config import settings
+
+    monkeypatch.setattr(settings, "registration_enabled", False)
+
+    primera = await client.post("/api/v1/auth/register", json=_register_payload())
+    segunda = await client.post("/api/v1/auth/register", json=_register_payload())
+
+    assert primera.status_code == 201
+    assert segunda.status_code == 403
+
+
+async def test_register_abierto_por_defecto(client: AsyncClient):
+    for _ in range(2):
+        r = await client.post("/api/v1/auth/register", json=_register_payload())
+        assert r.status_code == 201
+
+
 async def test_register_creates_tenant_and_admin(client: AsyncClient):
     r = await client.post(
         "/api/v1/auth/register",

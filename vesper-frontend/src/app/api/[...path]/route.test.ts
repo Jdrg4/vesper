@@ -34,6 +34,34 @@ describe("proxy /api/[...path]", () => {
     expect((init.headers as Headers).get("Cookie")).toBe("access_token=abc");
   });
 
+  it("reenvia un webhook de GitHub intacto: mismos bytes y cabeceras de firma", async () => {
+    // GitHub firma los bytes EXACTOS del cuerpo. Re-serializar el JSON cambia los
+    // bytes (espacios, orden) y descartar las cabeceras deja al backend sin firma:
+    // todo webhook entrando por el dominio publico se rechazaba.
+    const fetchSpy = mockBackend(200, '{"handled":true}');
+    const raw = '{"ref": "refs/heads/main",  "after": "abc"}';
+    const request = new NextRequest(new URL("/api/webhooks/github", ORIGIN), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-hub-signature-256": "sha256=deadbeef",
+        "x-github-event": "push",
+        "x-github-delivery": "d-1",
+      },
+      body: raw,
+    });
+
+    await POST(request);
+
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/api/v1/webhooks/github");
+    expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe(raw);
+    const headers = init.headers as Headers;
+    expect(headers.get("X-Hub-Signature-256")).toBe("sha256=deadbeef");
+    expect(headers.get("X-GitHub-Event")).toBe("push");
+    expect(headers.get("X-GitHub-Delivery")).toBe("d-1");
+  });
+
   it("no revienta con un 204 del backend", async () => {
     // 204 es "null body status": construir una Response con cuerpo — aunque sea
     // "" — lanza un TypeError. El logout responde 204, asi que sin esto cada

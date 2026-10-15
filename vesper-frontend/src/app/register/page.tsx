@@ -24,8 +24,14 @@ export default function RegisterPage() {
     try {
       await api.post("/auth/register", form);
       router.push("/dashboard");
-    } catch {
-      setError("Error al registrar. Verifica los datos e intenta de nuevo.");
+    } catch (e) {
+      // 403 = la instancia tiene el registro cerrado: reintentar no sirve.
+      const status = (e as { response?: { status?: number } }).response?.status;
+      setError(
+        status === 403
+          ? "El registro está cerrado en esta instancia. Pide acceso a quien la administra."
+          : "Error al registrar. Verifica los datos e intenta de nuevo.",
+      );
     } finally {
       setLoading(false);
     }

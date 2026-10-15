@@ -55,6 +55,9 @@ services:
       # desarrollo. Perderla = perder las credenciales de IA de todos los tenants.
       CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-production}
+      # Cerrado por defecto: solo se permite la primera cuenta. Hasta que cada job
+      # corra en su contenedor, abrirlo expone los clones de unos tenants a otros.
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-false}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       # Zen gateway (F4+). Solo backend, nunca bundle del frontend.
