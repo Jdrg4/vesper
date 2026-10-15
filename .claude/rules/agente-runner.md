@@ -82,9 +82,9 @@ GC puede matar el job a mitad de camino).
   A la UI solo va `{tool, path relativa}`: nunca texto del modelo ni rutas del servidor.
 - **Un modelo que el runtime no conoce da un 500 genérico** en `POST /message`; el motivo
   («Model not found: …») solo llega por el evento `session.error`, y el motor lo usa como
-  mensaje del job. Pasa con modelos recién publicados: el catálogo de `opencode` es un caché
-  de models.dev (`XDG_CACHE_HOME/opencode/models.json`) que se refresca solo y puede ir
-  por detrás del de Vesper durante un rato.
+  mensaje del job (esperando hasta 5 s: el 500 vuelve **antes** que el evento). El caso
+  real fue un modelo `deprecated` en models.dev, que `opencode` oculta; el catálogo de Vesper
+  ya los filtra.
 - **El SSE pasa por el proxy de Next sin bufferizar** (`text/event-stream`); con
   `res.text()` la UI no recibía nada hasta el final.
 - **Banco de evals**: `python -m evals.run --model <proveedor/modelo>` con

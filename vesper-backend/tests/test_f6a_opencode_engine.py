@@ -166,3 +166,22 @@ async def test_stop_durante_el_turno_lo_corta(tmp_path, repo):
     await engine.stop()
     assert runner.stops == 1
     assert not opencode_engine._PORTS_IN_USE
+
+
+async def test_el_motivo_del_500_se_espera_aunque_llegue_despues(tmp_path, repo):
+    """Con opencode real el 500 vuelve antes de que el SSE entregue `session.error`:
+    cortar la escucha en cuanto acaba el turno perdia el motivo."""
+    err = {
+        "type": "session.error",
+        "properties": {
+            "sessionID": SID,
+            "error": {"name": "UnknownError", "data": {"message": "Model not found: deepseek/x"}},
+        },
+    }
+    request = httpx.Request("POST", "http://x/session/s/message")
+    fail = httpx.HTTPStatusError(
+        "500", request=request, response=httpx.Response(500, request=request)
+    )
+    runner = ScriptedRunner(str(repo), 0, script=[(0.3, err)], turn=0.05, fail=fail)
+    with pytest.raises(RuntimeError, match="Model not found: deepseek/x"):
+        await _collect(_engine(tmp_path, runner), tmp_path)

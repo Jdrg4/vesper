@@ -53,6 +53,8 @@ def release_port(port: int) -> None:
 
 
 # ------------------------------------------------------------  Motor
+# Cuanto se espera al `session.error` que explica un turno fallido.
+ERROR_GRACE_SECONDS = 5.0
 
 
 class OpencodeEngine:
@@ -103,6 +105,7 @@ class OpencodeEngine:
         last_sign = time.monotonic()
         busy: set[str] = set()
         model_error: list[str] = []
+        got_error = asyncio.Event()
 
         async def handle(ev: dict) -> None:
             nonlocal last_sign
@@ -116,6 +119,7 @@ class OpencodeEngine:
                 model_error.append(
                     (error.get("data") or {}).get("message") or error.get("name") or str(error)
                 )
+                got_error.set()
                 return
             part = props.get("part") or {}
             if part.get("type") == "tool":
@@ -163,6 +167,12 @@ class OpencodeEngine:
                     "Suele ser el proveedor del modelo que no responde; reintenta más tarde."
                 )
 
+        failed = not turn.cancelled() and isinstance(turn.exception(), httpx.HTTPStatusError)
+        if failed and not model_error:
+            # El 500 vuelve antes de que el SSE entregue `session.error`: sin esta
+            # espera el motivo se perdia y el job solo decia "500".
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(got_error.wait(), ERROR_GRACE_SECONDS)
         listener.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await listener
