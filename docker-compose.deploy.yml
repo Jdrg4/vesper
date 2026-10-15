@@ -46,20 +46,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
+      redis:
+        condition: service_healthy
+    environment: &backend-env
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
+      # Obligatoria: con environment=production el backend no arranca con la de
+      # desarrollo. Perderla = perder las credenciales de IA de todos los tenants.
+      CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
       # Zen gateway (F4+). Solo backend, nunca bundle del frontend.
       OPENCODE_ZEN_KEY: ${OPENCODE_ZEN_KEY:-}
       OPENCODE_ZEN_BASE_URL: ${OPENCODE_ZEN_BASE_URL:-https://opencode.ai/zen/go/v1}
-      # Agent runtime (F4+).
+      ALLOW_INSTANCE_KEY_FALLBACK: ${ALLOW_INSTANCE_KEY_FALLBACK:-false}
+      # Agent runtime (F4+). La imagen lo instala en /usr/local/bin.
       OPENCODE_BIN: ${OPENCODE_BIN:-/usr/local/bin/opencode}
       OPENCODE_PORT_POOL_START: ${OPENCODE_PORT_POOL_START:-14096}
+      WORKSPACE_ROOT: /var/workspaces
       # GitHub App (F3+).
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
       GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
       GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
@@ -71,6 +79,26 @@ services:
     volumes:
       # Workspaces efimeros por job (F4+): clones shallow de los repos del
       # tenant. No commitear el contenido; solo el mountpoint.
+      - workspaces:/var/workspaces
+
+  # Cola de jobs + cron de las watch_rules + recogida de jobs colgados. Sin el,
+  # ningun repo se vigila y nada lo avisa. Misma imagen que el backend; arranca
+  # cuando el backend esta sano (ya migro) y no vuelve a migrar.
+  worker:
+    build:
+      context: ./vesper-backend
+      dockerfile: Dockerfile
+    command: ["arq", "src.worker.WorkerSettings"]
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment: *backend-env
+    healthcheck:
+      disable: true
+    volumes:
       - workspaces:/var/workspaces
 
   frontend:

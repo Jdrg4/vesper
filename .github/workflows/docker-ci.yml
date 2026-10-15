@@ -1,0 +1,71 @@
+# Workflow: las imagenes de produccion se construyen y el runtime del agente arranca.
+# Lo que ningun test unitario ve: que la imagen tenga `git` y un `opencode` 1.x
+# capaz de servir (`@opencode/cli` 2.x quito `--pure` y sale sin arrancar).
+name: Docker CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "vesper-backend/Dockerfile"
+      - "vesper-backend/docker-entrypoint.sh"
+      - "vesper-backend/requirements.txt"
+      - "vesper-frontend/Dockerfile"
+      - "docker-compose.deploy.yml"
+      - ".env.deploy.example"
+      - ".github/workflows/docker-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "vesper-backend/Dockerfile"
+      - "vesper-backend/docker-entrypoint.sh"
+      - "vesper-backend/requirements.txt"
+      - "vesper-frontend/Dockerfile"
+      - "docker-compose.deploy.yml"
+      - ".env.deploy.example"
+      - ".github/workflows/docker-ci.yml"
+
+jobs:
+  images:
+    name: Imagenes de produccion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: El compose es valido con la plantilla de variables
+        run: docker compose --env-file .env.deploy.example -f docker-compose.deploy.yml config --quiet
+
+      - name: Imagen del backend
+        run: docker build -t vesper-backend ./vesper-backend
+
+      - name: La imagen trae git y opencode 1.x
+        run: |
+          docker run --rm --entrypoint sh vesper-backend -c '
+            set -e
+            git --version
+            v=$(opencode --version)
+            echo "opencode $v"
+            case "$v" in 1.*) ;; *) echo "opencode debe ser 1.x" >&2; exit 1;; esac
+          '
+
+      - name: opencode serve arranca dentro de la imagen
+        run: |
+          docker run --rm --entrypoint sh vesper-backend -c '
+            mkdir -p /tmp/ws && cd /tmp/ws
+            OPENCODE_SERVER_PASSWORD=ci opencode serve --pure --port 14096 --hostname 127.0.0.1 >/tmp/oc.log 2>&1 &
+            for i in $(seq 1 60); do
+              if python -c "import base64,urllib.request as u; r=u.Request(\"http://127.0.0.1:14096/global/health\", headers={\"Authorization\": \"Basic \" + base64.b64encode(b\"opencode:ci\").decode()}); u.urlopen(r, timeout=2)" 2>/dev/null; then
+                echo "opencode responde"; exit 0
+              fi
+              sleep 1
+            done
+            echo "opencode no arranco:" >&2; cat /tmp/oc.log >&2; exit 1
+          '
+
+      - name: Imagen del frontend
+        run: |
+          docker build -t vesper-frontend \
+            --build-arg NEXT_PUBLIC_API_URL=https://vesper.example.com/api/v1 \
+            --build-arg NEXT_PUBLIC_SSE_URL=https://vesper.example.com \
+            ./vesper-frontend

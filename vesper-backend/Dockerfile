@@ -21,8 +21,19 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Lo que necesitan los jobs del agente: `git` para clonar y empujar, y el
+# runtime `opencode`. Debe ser `opencode-ai` 1.x: `@opencode/cli` 2.x quito
+# `--pure` y cambio la API (ver .claude/rules/agente-runner.md).
+ARG OPENCODE_VERSION=1.19.0
+RUN apt-get update && apt-get install -y --no-install-recommends git nodejs npm ca-certificates \
+    && npm install -g --omit=dev "opencode-ai@${OPENCODE_VERSION}" \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/*
+
+# Con HOME propio: opencode y git escriben ahi su cache y su config.
 RUN groupadd --system --gid 1001 vesper \
-    && useradd --system --uid 1001 --gid vesper --no-create-home vesper
+    && useradd --system --uid 1001 --gid vesper --create-home vesper \
+    && mkdir -p /var/workspaces && chown vesper:vesper /var/workspaces
 
 COPY --from=builder /root/.local /usr/local
 

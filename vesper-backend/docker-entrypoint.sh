@@ -32,6 +32,15 @@ except Exception as exc:
 done
 echo "==> Postgres listo."
 
+# Con un comando explicito (el servicio `worker` del compose: `arq ...`) se
+# ejecuta ese comando SIN migrar: las migraciones las aplica el backend, y el
+# worker arranca despues de que el backend este sano. Dos `alembic upgrade`
+# a la vez chocan.
+if [ "$#" -gt 0 ]; then
+    echo "==> Ejecutando: $*"
+    exec "$@"
+fi
+
 echo "==> Aplicando migraciones (alembic upgrade head)..."
 if ! alembic upgrade head; then
     echo "==> ERROR: alembic upgrade head fallo. Abortando arranque (esquema inconsistente)." >&2
