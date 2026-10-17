@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from src.agents.verification import Verification
+
 
 @dataclass(frozen=True)
 class Activity:
@@ -28,6 +30,8 @@ class EngineResult:
     tokens_input: int = 0
     tokens_output: int = 0
     cost: float = 0.0
+    # Veredicto antes/después de la suite; None = el motor no verifica (opencode local).
+    checks: Verification | None = None
 
 
 ActivityCallback = Callable[[Activity], Awaitable[None]]
@@ -98,7 +102,9 @@ class FakeEngine:
     activities: list[Activity] = field(default_factory=list)
     error: str | None = None
     hang: bool = False
+    checks: Verification | None = None
     stopped: int = 0
+    prompts: list[str] = field(default_factory=list)
 
     async def run(
         self,
@@ -108,6 +114,7 @@ class FakeEngine:
         credentials: dict[str, str],
         on_activity: ActivityCallback,
     ) -> EngineResult:
+        self.prompts.append(prompt)
         for activity in self.activities:
             await on_activity(activity)
         if self.hang:
@@ -118,7 +125,7 @@ class FakeEngine:
             target = Path(workdir) / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
-        return EngineResult()
+        return EngineResult(checks=self.checks)
 
     async def stop(self) -> None:
         self.stopped += 1

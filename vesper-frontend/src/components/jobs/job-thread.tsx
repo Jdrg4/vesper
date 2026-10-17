@@ -148,8 +148,16 @@ export function JobThread({
 
           {job.status === "needs_review" && (
             <div className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning">
-              El cambio toca archivos sensibles o contiene algo con forma de secreto, así que no abrí
-              el PR: revísalo tú antes.
+              <p>
+                {job.error_message?.error
+                  ? `${job.error_message.error}: no abrí el PR.`
+                  : "El cambio toca archivos sensibles o contiene algo con forma de secreto, así que no abrí el PR: revísalo tú antes."}
+              </p>
+              {job.error_message?.suite_log && (
+                <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg border border-warning/20 bg-background/60 p-3 font-mono text-xs leading-relaxed text-foreground">
+                  {job.error_message.suite_log}
+                </pre>
+              )}
             </div>
           )}
 
@@ -195,7 +203,7 @@ function ChangedFiles({ summary }: { summary: string }) {
   const m = summary.match(/^(\d+) files? changed: ([\s\S]*)$/);
   if (!m) return <p className="text-[0.9375rem] leading-relaxed">{summary}</p>;
   const count = Number(m[1]);
-  const files = m[2].split(", ").filter(Boolean);
+  const files = m[2].split(" WARNING:")[0].split(", ").filter(Boolean);
   return (
     <details className="group">
       <summary className="cursor-pointer list-none text-[0.9375rem] leading-relaxed">

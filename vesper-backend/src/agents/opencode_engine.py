@@ -90,6 +90,11 @@ class OpencodeEngine:
         on_activity: ActivityCallback,
     ) -> EngineResult:
         workdir = Path(workdir)
+        runner = await self._provision(workdir, credentials)
+        return await self._drive(runner, workdir, prompt, model, on_activity)
+
+    async def _provision(self, workdir: Path, credentials: dict[str, str]) -> OpencodeRunner:
+        """Levanta el runtime del job; lo que `_teardown` necesita queda en `self`."""
         # Directorio de datos propio del job, con las credenciales de ESTE
         # tenant y nada mas. Ver `AgentSandbox`.
         self._sandbox = AgentSandbox(self.workspace_base, self.job_id)
@@ -99,9 +104,19 @@ class OpencodeEngine:
         await self._runner.start()
         # Sondea /global/health: el arranque de `opencode serve` no es instantaneo.
         await self._runner.wait_ready()
+        return self._runner
+
+    async def _drive(
+        self,
+        runner: OpencodeRunner,
+        workdir: Path,
+        prompt: str,
+        model: str,
+        on_activity: ActivityCallback,
+    ) -> EngineResult:
         # `auth`: el runtime arranca protegido con un password por job.
-        self._client = httpx.AsyncClient(timeout=AGENT_TURN_TIMEOUT_SECONDS, auth=self._runner.auth)
-        session_id = await self._runner.create_session(self._client)
+        self._client = httpx.AsyncClient(timeout=AGENT_TURN_TIMEOUT_SECONDS, auth=runner.auth)
+        session_id = await runner.create_session(self._client)
 
         result = EngineResult()
         last_sign = time.monotonic()
@@ -155,7 +170,7 @@ class OpencodeEngine:
             # inactividad sigue corriendo y acaba cortando (falla cerrado).
             for _attempt in range(2):
                 try:
-                    async for ev in self._runner.stream_events(self._client):
+                    async for ev in runner.stream_events(self._client):
                         await handle(ev)
                 except Exception as exc:
                     logger.warning("agent_events_dropped", job_id=self.job_id, error=str(exc))
@@ -171,9 +186,7 @@ class OpencodeEngine:
         # instante emite su `session.error` enseguida y se perderia.
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(connected.wait(), CONNECT_GRACE_SECONDS)
-        turn = asyncio.create_task(
-            self._runner.send_prompt(self._client, session_id, prompt, model)
-        )
+        turn = asyncio.create_task(runner.send_prompt(self._client, session_id, prompt, model))
         self._tasks = [listener, turn]
 
         while not turn.done():
@@ -222,13 +235,17 @@ class OpencodeEngine:
             if self._client is not None:
                 await self._client.aclose()
         finally:
-            try:
-                if self._runner is not None:
-                    await self._runner.stop()
-            finally:
-                if self._port is not None:
-                    release_port(self._port)
-                # Despues de parar el runtime: mientras vivia tenia el auth.json
-                # abierto, y en Windows eso impide borrarlo.
-                if self._sandbox is not None:
-                    await self._sandbox.cleanup()
+            await self._teardown()
+
+    async def _teardown(self) -> None:
+        """Para el runtime y libera lo que `_provision` tomo."""
+        try:
+            if self._runner is not None:
+                await self._runner.stop()
+        finally:
+            if self._port is not None:
+                release_port(self._port)
+            # Despues de parar el runtime: mientras vivia tenia el auth.json
+            # abierto, y en Windows eso impide borrarlo.
+            if self._sandbox is not None:
+                await self._sandbox.cleanup()

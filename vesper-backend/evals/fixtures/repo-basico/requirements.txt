@@ -1,0 +1,1 @@
+# Sin dependencias externas; pytest viene preinstalado en /opt/venv.

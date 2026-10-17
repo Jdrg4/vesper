@@ -1,0 +1,84 @@
+# Workflow: construye `vesper-agent:1` y ejecuta `setup.sh` + el test real de `DockerOpencodeEngine`.
+name: Docker Engine CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "vesper-backend/src/agents/**"
+      - "vesper-backend/tests/integration/**"
+      - "vesper-backend/evals/fixtures/**"
+      - ".github/workflows/docker-engine-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "deploy/**"
+      - "vesper-backend/src/agents/**"
+      - "vesper-backend/tests/integration/**"
+      - "vesper-backend/evals/fixtures/**"
+      - ".github/workflows/docker-engine-ci.yml"
+
+jobs:
+  docker-engine:
+    name: Imagen vesper-agent + setup.sh + DockerOpencodeEngine
+    runs-on: ubuntu-24.04
+
+    env:
+      ENVIRONMENT: test
+      VESPER_REQUIRE_DOCKER: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: vesper-backend/requirements.txt
+
+      - name: Instalar dependencias del backend
+        working-directory: vesper-backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ejecutar deploy/jobs-host/setup.sh (primera pasada + segunda idempotente)
+        run: |
+          sudo apt-get purge -y ufw || true
+          sudo ./deploy/jobs-host/setup.sh 127.0.0.1
+          sudo ./deploy/jobs-host/setup.sh 127.0.0.1
+          mkdir -p "${RUNNER_TEMP}/docker-certs"
+          sudo cp /root/vesper-docker-client/{ca,cert,key}.pem "${RUNNER_TEMP}/docker-certs/"
+          sudo chown -R "$USER:$USER" "${RUNNER_TEMP}/docker-certs"
+          chmod 600 "${RUNNER_TEMP}/docker-certs/key.pem"
+
+      - name: Comprobar aislamiento de red (DOCKER-USER, INPUT e ICC)
+        run: |
+          # Control: el 2376 del anfitrión sí escucha desde el propio anfitrión
+          timeout 3 bash -c "</dev/tcp/127.0.0.1/2376"
+          # Desde un contenedor en vesper-jobs, el anfitrión (172.30.0.1:2376) debe estar bloqueado
+          if docker run --rm --network vesper-jobs vesper-agent:1 timeout 2 bash -c "</dev/tcp/172.30.0.1/2376"; then
+            echo "ERROR: el contenedor alcanzó el 2376 del anfitrión" >&2
+            exit 1
+          fi
+          # Entre contenedores de distintos jobs (ICC desactivado + DOCKER-USER DROP 172.16.0.0/12)
+          docker run -d --rm --name peer-a --network vesper-jobs vesper-agent:1 python3 -m http.server 8000
+          trap 'docker rm -f peer-a >/dev/null 2>&1 || true' EXIT
+          sleep 2
+          PEER_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "vesper-jobs").IPAddress}}' peer-a)"
+          curl -m 3 -sI "http://${PEER_IP}:8000" >/dev/null
+          if docker run --rm --network vesper-jobs vesper-agent:1 curl -m 2 -sI "http://${PEER_IP}:8000"; then
+            echo "ERROR: un contenedor alcanzó a otro en vesper-jobs" >&2
+            exit 1
+          fi
+
+      - name: Ejecutar test de integración contra Docker real (TCP 2376 + TLS)
+        working-directory: vesper-backend
+        env:
+          DOCKER_HOST: tcp://127.0.0.1:2376
+          DOCKER_TLS_VERIFY: "1"
+          DOCKER_CERT_PATH: ${{ runner.temp }}/docker-certs
+        run: pytest tests/integration/test_docker_engine_real.py -v

@@ -28,9 +28,11 @@ Qwen, Mistral, Groq, OpenRouter and more — using **your own API key**, encrypt
 No per-seat pricing, no vendor lock-in, and it runs on your own server.
 
 > [!WARNING]
-> **Early days.** The end-to-end loop works (repo → agent → validated diff → PR), but Vesper
-> is not production-ready yet: per-job container isolation lands in the next phase. Run it
-> for your own repos, not as a public service. See the [roadmap](#roadmap).
+> **Isolation modes (`AGENT_ENGINE`).** By default (`AGENT_ENGINE=opencode`), the agent runs
+> commands on the server itself — fine for reviewing your own repositories, **not** for opening
+> registration to third parties. To isolate each job in an unprivileged container (and run the
+> repository's test suite before and after), set `AGENT_ENGINE=docker` against a dedicated jobs
+> host ([`deploy/jobs-host/`](deploy/jobs-host/README.md)). See the [roadmap](#roadmap).
 
 ## Why Vesper
 
@@ -73,7 +75,7 @@ An agent that writes to your repos has to earn trust. Before anything leaves the
 | **Secrets in the diff** | Added lines are scanned for AWS, GitHub, Anthropic, OpenAI, Slack and Google keys, private keys, credentials in connection strings and hard-coded passwords. A hit means **no PR** — the job is held for review. |
 | **Sensitive paths** | Changes to CI workflows, `package.json`, `requirements.txt`, `pyproject.toml` or `.env` are held for a human. |
 | **Least-privilege GitHub access** | Short-lived installation tokens (`contents:write`, `pull_requests:write`, `metadata:read`) — never a personal token. |
-| **Isolated runtime environment** | The agent gets an allowlisted environment: none of the server's secrets, and only the current workspace's model keys. |
+| **Isolated runtime & verified PRs** | With `AGENT_ENGINE=docker`, each job runs in an unprivileged container on a separate Docker host (never seeing the GitHub token) and runs the repo's test suite before and after: if a passing suite breaks, **no PR is opened**. |
 | **Model failures are loud** | If the provider rejects the call, the job fails with the provider's message instead of pretending there was nothing to fix. |
 
 ## Quickstart

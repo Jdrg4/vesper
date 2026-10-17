@@ -835,9 +835,9 @@ async def test_clone_no_deja_el_token_en_git_config(tmp_path, monkeypatch):
     """El installation token no puede quedar escrito en el workspace.
 
     Clonar con el token incrustado en la URL —`x-access-token:TOKEN@github.com`—
-    deja esa URL en `.git/config`, y ese archivo queda legible durante todo el
-    job para el agente y para cualquier script del repo del tenant que corra en
-    el sandbox.
+    deja esa URL en `.git/config` y en `.git/logs/HEAD`, y esos archivos quedan
+    legibles durante todo el job para el agente y para cualquier script del repo
+    del tenant que corra en el sandbox.
     """
     origin, _ = await _local_origin(tmp_path)
     token = "ghs_tokensupersecreto"
@@ -849,6 +849,7 @@ async def test_clone_no_deja_el_token_en_git_config(tmp_path, monkeypatch):
     config = (workdir / ".git" / "config").read_text(encoding="utf-8")
     assert token not in config, "el token no puede persistir en el workspace"
     assert "https://github.com/acme/repo.git" in config
+    assert not (workdir / ".git" / "logs").exists(), "el reflog del clon guarda la URL con el token"
 
 
 async def test_commit_and_push_usa_el_remote_autenticado_explicito(tmp_path, monkeypatch):
@@ -861,6 +862,11 @@ async def test_commit_and_push_usa_el_remote_autenticado_explicito(tmp_path, mon
     await ws.configure_git(workdir)
     await ws.create_branch(workdir, "vesper/quality-abc123")
     (workdir / "app.py").write_text("x = 2\n", encoding="utf-8")
+    # Un hook pre-commit nunca debe ejecutarse en el worker (`--no-verify`).
+    hook = workdir / ".git" / "hooks" / "pre-commit"
+    hook.parent.mkdir(parents=True, exist_ok=True)
+    hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
 
     sha = await ws.commit_and_push(
         workdir, "vesper/quality-abc123", "vesper: cambio", "acme/repo", "ghs_secreto"

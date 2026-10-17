@@ -55,7 +55,16 @@ class Settings(BaseSettings):
     opencode_bin: str = ""
     opencode_port_pool_start: int = 14096
     # Motor del agente (F6a). Uno por instancia; los evals deciden si hace falta mas.
-    agent_engine: Literal["opencode"] = "opencode"
+    agent_engine: Literal["opencode", "docker"] = "opencode"
+    # Motor "docker" (F6b): imagen del job, red propia (sin alcance al anfitrion ni entre
+    # tenants), tope de recursos por contenedor y de jobs simultaneos en el host de Docker.
+    agent_image: str = "vesper-agent:1"
+    agent_docker_network: str = "vesper-jobs"
+    agent_job_cpus: float = 2
+    agent_job_memory: str = "4g"
+    agent_max_jobs: int = 3
+    # Techo de CADA comando de la suite (install o test) dentro del contenedor.
+    agent_suite_timeout_seconds: int = 900
     # Sin ningun evento de la sesion durante este tiempo, el agente se da por colgado.
     agent_idle_timeout_seconds: int = 10 * 60
     # Raiz de los workspaces clonados, uno por (tenant, repo). El default es la

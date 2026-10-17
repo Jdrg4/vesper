@@ -69,8 +69,10 @@ _next.log
 .playwright-mcp/
 .validation-screenshots/
 
-# --- Preferencias personales de Claude Code (no se comparten) ---
+# --- Preferencias personales de agentes de código (no se comparten) ---
 CLAUDE.local.md
+AGENTS.local.md
+.agents/rules/local.md
 .claude/settings.local.json
 
 # Resultados del banco de evals (se generan a mano y gastan saldo)

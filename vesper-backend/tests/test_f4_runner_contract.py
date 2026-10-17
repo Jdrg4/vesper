@@ -48,6 +48,21 @@ async def test_create_session_reads_id_from_root():
     assert captured["url"] == f"{BASE}/session"
 
 
+async def test_host_remoto_construye_las_urls_contra_ese_host():
+    """F6b: el opencode del contenedor no esta en 127.0.0.1."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"id": "ses_x"})
+
+    runner = OpencodeRunner("/tmp/ws", 14100, host="10.1.2.3")
+    async with _client(handler) as client:
+        await runner.create_session(client)
+
+    assert captured["url"] == "http://10.1.2.3:14100/session"
+
+
 # ------------------------------------------------------------------  Prompt
 async def test_send_prompt_uses_provider_model_object_and_typed_parts():
     """`model` es un objeto {providerID, modelID} y las partes llevan `type`."""
