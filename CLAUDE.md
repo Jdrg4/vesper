@@ -1,12 +1,17 @@
 # CLAUDE.md
 
-Guía para trabajar en **Vesper** con Claude Code (o cualquier agente de código). Léela antes
-de tocar nada: aquí están la arquitectura, los comandos, el invariante de seguridad y las
-trampas que ya costaron tiempo. El detalle de cada módulo vive en `.claude/rules/` y se carga
-solo al leer archivos de su ruta.
+Guía para trabajar en **Vesper** con cualquier agente de código (Antigravity, Claude Code,
+Codex, OpenCode, Cursor…). Léela antes de tocar nada: aquí están la arquitectura, los comandos,
+el invariante de seguridad y las trampas que ya costaron tiempo. El detalle de cada módulo vive
+en `.agents/rules/` y `.claude/rules/` (sincronizados).
 
-> Si tienes preferencias personales para este repo, ponlas en un `CLAUDE.local.md` en la raíz
-> (está en `.gitignore`; Claude Code lo carga junto a este archivo).
+> Si existen `CLAUDE.local.md` o `.agents/rules/local.md` en el repo (ignorados por git),
+> contienen las preferencias personales, puertos, rutas y pendientes de esta máquina:
+> Antigravity carga `.agents/rules/local.md` automáticamente y Claude Code carga
+> `CLAUDE.local.md`; cualquier otro agente debe leer `CLAUDE.local.md` al inicio de la sesión.
+>
+> No confundir: el agente que Vesper ejecuta sobre los repos de sus tenants **no** lee este
+> archivo; este guía el desarrollo de Vesper mismo.
 
 ## Qué es
 
@@ -14,7 +19,7 @@ solo al leer archivos de su ruta.
 y propone Pull Requests autónomos** (seguridad, code quality, deps, performance, docs).
 Interfaz móvil por **PWA**.
 
-> *Claude Code multi-tenant, autoservicio, que te abre PRs.*
+> *Agente de código multi-tenant, autoservicio, que te abre PRs.*
 
 Monorepo con dos paquetes independientes:
 
@@ -42,10 +47,10 @@ Conceptos:
 > ([motor propio](docs/superpowers/specs/2026-08-04-f6-motor-de-agente-propio-design.md))
 > queda superada en lo del bucle propio; sus partes de contenedor y evals siguen vigentes.
 
-**Estado por fase (F1-F9)**: `.claude/rules/roadmap-fases.md`. Hoy: F1-F5 y F9 (despliegue)
-cerradas; **F6 en curso**; F7 reviewer y F8 PWA pendientes. Las decisiones de diseño de cada fase
-viven en [docs/superpowers/specs/](docs/superpowers/specs/): al tocar la lógica de una fase,
-leer su spec antes de cambiarla.
+**Estado por fase (F1-F9)**: `.agents/rules/roadmap-fases.md` (y `.claude/rules/roadmap-fases.md`).
+Hoy: F1-F5 y F9 (despliegue) cerradas; **F6 en curso**; F7 reviewer y F8 PWA pendientes. Las
+decisiones de diseño de cada fase viven en [docs/superpowers/specs/](docs/superpowers/specs/):
+al tocar la lógica de una fase, leer su spec antes de cambiarla.
 
 ### Servicios y puertos
 
@@ -83,7 +88,7 @@ alembic check                                            # drift modelos ↔ rev
 Los tests necesitan **Postgres real** en `localhost:55432`, base `vesper_test`, usuario/clave
 `vesper/vesper` (override con `TEST_DATABASE_URL`). El fixture recrea el esquema completo en
 cada test, y el autouse `_override_get_db` es lo que redirige la app a la base de tests.
-BD local y seed de usuarios: `.claude/rules/bd-local.md` y
+BD local y seed de usuarios: `.agents/rules/bd-local.md` y
 [docs/test-users.md](docs/test-users.md).
 
 ### Frontend (`cd vesper-frontend`)
@@ -162,8 +167,8 @@ Patrones transversales:
   "no llames `db.commit()` en services" es `ReviewService.trigger_job`: la tarea de fondo abre
   su propia sesión y no vería un job solo flusheado.
 - **Migraciones:** `alembic/env.py` debe importar **todos** los `models.py` o
-  `--autogenerate` falla en silencio (el hook de `.claude/hooks/` lo recuerda). Revisar
-  siempre el script generado.
+  `--autogenerate` falla en silencio (el hook de `.claude/hooks/` / `.agents/hooks.json` lo
+  recuerda). Revisar siempre el script generado.
 - **Logging:** structlog con eventos key-value (`logger.info("review_started", job_id=jid,
   tenant_id=tid)`). **Sin f-strings** en los mensajes del logger.
 - **Health checks:** `GET /health` (liveness, no toca BD) y `GET /health/ready` (`SELECT 1`,
@@ -191,26 +196,26 @@ revisa con lupa.
 ### Frontend
 
 Patrones (Next 16 async, middleware, refresh, SSE, React Query, Zustand, Zod, PWA) y trampas
-de Playwright: `.claude/rules/frontend.md`. Antes de crear un componente, revisar
+de Playwright: `.agents/rules/frontend.md`. Antes de crear un componente, revisar
 `src/components/ui/`. Diseño limpio de panel de control; mirar siempre también a 390 px.
 
 ## Configuración
 
 - **Variables de entorno y creación de la GitHub App** (manifest flow, claves, OAuth de
-  instalación): `.claude/rules/github-app-entorno.md`.
+  instalación): `.agents/rules/github-app-entorno.md`.
 - **Modelos y credenciales (BYOK)** (cifrado Fernet, `resolve_credentials`, formato
-  `proveedor/modelo`): `.claude/rules/byok.md`.
+  `proveedor/modelo`): `.agents/rules/byok.md`.
 - **Secretos** solo en env vars / `.env` local. Nunca en el repo (hay `detect-secrets` en
   pre-commit).
 - **Nunca correr validaciones, seeds ni migraciones de prueba contra producción.** El seed
   aborta si `DATABASE_URL` no es local.
-- **Despliegue** (compose único, Traefik, Cloudflare Tunnel): `.claude/rules/produccion-deploy.md`.
+- **Despliegue** (compose único, Traefik, Cloudflare Tunnel): `.agents/rules/produccion-deploy.md`.
 
-## 📚 Conocimiento por módulo: `.claude/rules/`
+## 📚 Conocimiento por módulo: `.agents/rules/` y `.claude/rules/`
 
-Se carga **solo cuando se lee un archivo de sus rutas** (frontmatter `paths:`). Si una tarea
-toca un tema sin leer sus archivos —p. ej. diseñas antes de abrir código—, **lee la regla a
-mano**: es ahí donde están las trampas.
+En Antigravity se descubren desde `.agents/rules/`; en Claude Code se cargan al leer archivos de
+sus rutas (frontmatter `paths:` en `.claude/rules/`). Si tu agente no las carga automáticamente
+o diseñas antes de abrir código, **lee la regla a mano**: es ahí donde están las trampas.
 
 | Regla | Qué contiene |
 |---|---|

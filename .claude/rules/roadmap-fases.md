@@ -12,7 +12,7 @@ paths:
 
 | Fase | Estado | Nota |
 | --- | --- | --- |
-| F1 Fundación/DevEx | ✅ | CI, pre-commit, `.claude/`, `.mcp.json`. |
+| F1 Fundación/DevEx | ✅ | CI, pre-commit, `AGENTS.md`, `.agents/`, `.claude/`, `.mcp.json`. |
 | F2 Auth + multi-tenancy | ✅ | JWT, RBAC, `tenant_scoped_query`, seed de usuarios. |
 | F3 GitHub App | ✅ **Verificado con una App real** | Instalación **con verificación OAuth de propiedad**, enrollment, sync (42 repos reales). |
 | F4 Agent runner | ✅ **Cerrada punta a punta** | Job real completo: clone con installation token → `opencode serve` → modelo del tenant → diff por git → validación → push → **PR abierto por el bot**. `opencode` se queda como primer harness (F6 lo pone detrás de una interfaz). En producción: PRs reales con `deepseek-v4-pro`. |
