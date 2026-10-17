@@ -352,11 +352,12 @@ class WorkspaceService:
         if rc != 0:
             raise RuntimeError(f"git clone failed: {_redact(stderr, installation_token)}")
 
-        # `git clone` deja la URL con el token dentro de `.git/config`, y ese
-        # archivo queda legible durante todo el job para el agente y para
-        # cualquier script del repo del tenant que se ejecute en el sandbox.
-        # El push vuelve a pasar el remote autenticado como argumento.
+        # `git clone` deja la URL con el token dentro de `.git/config` y en el
+        # reflog (`.git/logs/HEAD`), archivos legibles durante el job para el
+        # agente y para cualquier script del repo del tenant. El push vuelve a
+        # pasar el remote autenticado como argumento.
         await _run_git(workdir, "remote", "set-url", "origin", _clean_remote(repo_full_name))
+        await wipe(workdir / ".git" / "logs")
         self._ignore_ephemeral(workdir)
         return workdir
 
@@ -406,6 +407,7 @@ class WorkspaceService:
         rc, _, stderr = await _run_git(
             workdir,
             "commit",
+            "--no-verify",
             "-m",
             message,
         )
@@ -448,10 +450,12 @@ class WorkspaceService:
         agente haga por cualquier via (comandos, varios mensajes).
         """
         # `-N` (intent-to-add) hace que los archivos nuevos aparezcan en
-        # `git diff` sin llegar a stagear su contenido.
+        # `git diff HEAD` sin llegar a stagear su contenido; comparar contra
+        # `HEAD` captura tanto cambios del working tree como los ya aplicados
+        # al index (`git apply --index`) y los archivos borrados.
         await _run_git(workdir, "add", "-A", "-N")
 
-        rc, numstat, _ = await _run_git(workdir, "diff", "--numstat")
+        rc, numstat, _ = await _run_git(workdir, "diff", "HEAD", "--numstat")
         if rc != 0 or not numstat.strip():
             return []
 
@@ -461,7 +465,7 @@ class WorkspaceService:
             if len(parts) != 3:
                 continue
             additions, deletions, path = parts
-            _, patch, _err = await _run_git(workdir, "diff", "--", path)
+            _, patch, _err = await _run_git(workdir, "diff", "HEAD", "--", path)
             diffs.append(
                 {
                     "file": path,

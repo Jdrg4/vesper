@@ -57,9 +57,10 @@ TIMEOUT_EXIT = 124
 _SLOTS = asyncio.Semaphore(settings.agent_max_jobs)
 
 # Credenciales dentro de la config de git (usuario:clave dentro de la URL del remote, o un
-# `http.extraheader`): jamás deben cruzar al contenedor, donde corre código del tenant.
+# `http.extraheader` / `insteadOf` / `credential.helper`): jamás deben cruzar al contenedor.
 _URL_USERINFO = re.compile(r"(\w+://)[^/@\s]+@")
-_AUTH_LINE = re.compile(r"extraheader|authorization", re.I)
+_AUTH_LINE = re.compile(r"extraheader|authorization|insteadof|helper", re.I)
+_EXCLUDED_GIT = (".git/config", ".git/FETCH_HEAD", ".git/logs", ".git/hooks")
 
 
 def _runtime_host() -> str:
@@ -87,12 +88,14 @@ def _repo_tar(workdir: Path) -> bytes:
     config = workdir / ".git" / "config"
 
     def keep(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        # La config va aparte, ya sin credenciales (ver `_scrub_git_config`).
-        if posixpath.normpath(info.name) == ".git/config":
+        # Ni la config cruda, ni reflogs/FETCH_HEAD (guardan la URL con el token del clon),
+        # ni hooks locales viajan al contenedor.
+        norm = posixpath.normpath(info.name)
+        if norm in _EXCLUDED_GIT or norm.startswith((".git/logs/", ".git/hooks/")):
             return None
         return _owned(info)
 
-    with tarfile.open(fileobj=buf, mode="w") as tar:
+    with tarfile.open(fileobj=buf, mode="w", dereference=False) as tar:
         tar.add(workdir, arcname=".", filter=keep)
         if config.is_file():
             data = _scrub_git_config(config.read_bytes())
@@ -328,8 +331,9 @@ class DockerOpencodeEngine(OpencodeEngine):
     async def _apply_patch(self, workdir: Path, patch: bytes) -> None:
         if not patch.strip():
             return  # el agente no cambió nada
-        # `git apply` trata el parche como datos no confiables: rechaza rutas fuera del
-        # árbol, escrituras a través de symlinks y cualquier cosa dentro de `.git/`.
+        # `git apply` (sin `--unsafe-paths`) trata el parche como datos no confiables:
+        # rechaza rutas fuera del árbol, escrituras a través de symlinks y cualquier cosa
+        # dentro de `.git/`.
         proc = await asyncio.create_subprocess_exec(
             "git",
             "apply",

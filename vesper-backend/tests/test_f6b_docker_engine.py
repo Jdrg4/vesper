@@ -1,6 +1,7 @@
 """F6b: DockerOpencodeEngine con un cliente de Docker falso (sin Docker, sin opencode)."""
 
 import asyncio
+import contextlib
 import io
 import json
 import shutil
@@ -180,9 +181,24 @@ async def test_sube_repo_y_credenciales_como_agent(tmp_path, client):
 
 async def test_token_de_github_nunca_entra_al_contenedor(tmp_path, client):
     wd = _repo(tmp_path / "wd")
-    # Peor caso: un clon que SÍ guardara credenciales en su config.
-    _git(wd, "remote", "add", "origin", f"https://x-access-token:{FAKE_TOKEN}@github.com/o/r.git")
+    # Peor caso: un clon que SÍ guardara credenciales en config, reflogs, FETCH_HEAD o hooks,
+    # más un symlink apuntando fuera del workspace a un secreto del host.
+    url = f"https://x-access-token:{FAKE_TOKEN}@github.com/o/r.git"
+    _git(wd, "remote", "add", "origin", url)
     _git(wd, "config", "http.extraheader", f"AUTHORIZATION: basic {FAKE_TOKEN}")
+    _git(wd, "config", f"url.{url}.insteadOf", "https://github.com/")
+    _git(wd, "config", "credential.helper", f"!echo password={FAKE_TOKEN}")
+    (wd / ".git" / "logs" / "refs" / "heads").mkdir(parents=True, exist_ok=True)
+    (wd / ".git" / "logs" / "HEAD").write_text(f"0000 1111 bot <b@v> 1 +0000\tclone: from {url}\n")
+    (wd / ".git" / "logs" / "refs" / "heads" / "main").write_text(f"reflog {FAKE_TOKEN}\n")
+    (wd / ".git" / "FETCH_HEAD").write_text(f"1111\t\t{url}\n")
+    (wd / ".git" / "hooks").mkdir(parents=True, exist_ok=True)
+    (wd / ".git" / "hooks" / "pre-commit").write_text(f"#!/bin/sh\necho {FAKE_TOKEN}\n")
+    host_secret = tmp_path / "host_secret.txt"
+    host_secret.write_text(f"HOST_SECRET={FAKE_TOKEN}\n")
+    with contextlib.suppress(OSError):
+        (wd / "link_afuera.txt").symlink_to(host_secret)
+
     await _run(_engine(tmp_path, client), wd)
 
     c = client.container
@@ -192,9 +208,14 @@ async def test_token_de_github_nunca_entra_al_contenedor(tmp_path, client):
             assert FAKE_TOKEN.encode() not in body
     assert FAKE_TOKEN not in json.dumps(client.run_calls, default=str)
     assert FAKE_TOKEN not in json.dumps(c.execs, default=str)
-    config = _members(c.archives[0][1])[".git/config"][1].decode()
+    members = _members(c.archives[0][1])
+    assert not any(
+        n == ".git/FETCH_HEAD" or n.startswith((".git/logs", ".git/hooks")) for n in members
+    )
+    config = members[".git/config"][1].decode()
     assert "github.com/o/r.git" in config  # el remote sigue, sin credenciales
     assert "extraheader" not in config
+    assert "insteadOf" not in config and "helper" not in config
 
 
 async def test_opencode_arranca_con_el_mismo_password_que_el_runner(tmp_path, client):
@@ -315,6 +336,8 @@ def _agent_patch(tmp_path):
 
 
 async def test_parche_se_aplica_en_el_clon_del_worker(tmp_path, client):
+    from src.review_jobs.services import WorkspaceService
+
     host, patch = _agent_patch(tmp_path)
     client.rules = [("git diff --cached --binary", (0, (patch, b"")))]
     await _run(_engine(tmp_path, client), host)
@@ -325,6 +348,8 @@ async def test_parche_se_aplica_en_el_clon_del_worker(tmp_path, client):
     assert (host / "bin.dat").read_bytes() == b"\xff\xfe\x00\x01"
     staged = _git(host, "diff", "--cached", "--name-status").stdout.decode()
     assert "D\tborrar.txt" in staged and "A\tnuevo.bin" in staged and "M\ta.txt" in staged
+    diffs = await WorkspaceService().capture_diff(host)
+    assert {d["file"] for d in diffs} == {"a.txt", "borrar.txt", "nuevo.bin", "bin.dat"}
 
 
 async def test_parche_vacio_no_toca_nada(tmp_path, client):
