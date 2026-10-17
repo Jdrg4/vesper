@@ -124,3 +124,48 @@ Timeout por comando: 15 min. Más allá, cuenta como ❌ con el motivo.
 3. Desde un contenedor de job, la LAN y Tailscale son inalcanzables (comprobado).
 4. Con `AGENT_ENGINE=opencode` todo sigue como en F6a.
 5. Loop completo en verde y job de CI con Docker real en verde.
+
+## 11. Estado de la implementación (2026-10-17)
+
+Rama `f6b-contenedor`. Cada tarea se implementó con TDD y pasó una revisión independiente,
+salvo donde se indica.
+
+| # | Tarea | Estado |
+| --- | --- | --- |
+| 1 | `src/agents/verification.py`: detección de comandos de test (§5), `Verification`, veredicto (§4), `tail_redacted` | ✅ revisada |
+| 2 | `OpencodeEngine` partido en `_provision` (arrancar el runtime) y `_drive` (sesión, SSE, vigilante); `OpencodeRunner(..., host=)` | ✅ revisada |
+| 3 | `EngineResult.checks`; el veredicto decide PR o `needs_review`; sección «Verificación» en el cuerpo del PR; la instrucción «corre los tests» solo con `AGENT_ENGINE=docker` | ✅ revisada |
+| 4 | `src/agents/docker_engine.py` (`DockerOpencodeEngine`) | ⚠️ **implementada, sin revisión de seguridad** (se cortó) |
+| 5 | `deploy/agent-image/Dockerfile`, `deploy/jobs-host/setup.sh` y su README | ✅ revisada, **sin probar en un Docker real** |
+| 6 | `AGENT_ENGINE` elige el motor; variables en el compose; aviso de aislamiento en los README; la UI muestra `error_message.suite_log` en `needs_review` | ⬜ |
+| 7 | Test de integración y workflow de CI con Docker real (construye la imagen, contenedor, suites, parche) | ⬜ |
+| 8 | Cierre: documentación, revisión final de la rama, anfitrión de jobs, job real | ⬜ |
+
+### Lo siguiente, en orden
+
+1. **Revisión de seguridad de la tarea 4.** Focos: que el token de instalación no llegue al
+   contenedor por ninguna vía (`.git/config`, `extraheader`, `insteadOf`, credential helpers,
+   `FETCH_HEAD`, logs); que el tar del repo no siga symlinks fuera del workspace; que el parche
+   que vuelve del contenedor, aplicado con `git apply` **en el worker** (que tiene el token),
+   no pueda escribir fuera del clon ni en `.git/` (hooks, config); comillas de los comandos de
+   test; el semáforo y `_teardown` ante cancelación y aprovisionamiento a medias.
+2. Tareas 6 y 7.
+3. La tarea 7 es la primera vez que la imagen y `setup.sh` corren de verdad: esperar
+   sorpresas ahí (Node y corepack de la imagen base, usuario uid 1000, reglas `DOCKER-USER`).
+4. Tarea 8: preparar el anfitrión con `setup.sh`, comprobar el bloqueo de red con las pruebas
+   del README (cada una con su control positivo) y cerrar con los criterios del §10.
+
+### Deuda anotada en las revisiones
+
+- **Seguridad:** el prompt se construye al crear el job. Si se cambia `AGENT_ENGINE` de
+  `docker` a `opencode` con jobs en cola, esos jobs llegan al motor local con la instrucción
+  de correr los tests (código del repo en el servidor). Arreglo: decidir la instrucción al
+  ejecutar, no al crear.
+- Con solo `requirements-dev.txt` (sin `requirements.txt`) el install falla y la suite sale
+  `already_red` por un motivo que no es de tests.
+- `before.exit_code is None` con comandos se pinta ❌ sin aviso; faltan tests de timeout (⏱).
+- Un diff que rompe la suite **y** toca secretos solo muestra el primer aviso.
+- `setup.sh`: el SAN del certificado no se regenera si cambian las IPs; reinicia `dockerd` en
+  cada ejecución; `netfilter-persistent save` guarda también las cadenas de Docker; sin reglas
+  IPv6; con el backend nftables de Docker 29+ `DOCKER-USER` no existe y el script debería
+  abortar.
