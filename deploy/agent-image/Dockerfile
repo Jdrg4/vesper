@@ -13,19 +13,20 @@ RUN apt-get update \
 # se renombra a `agent` en vez de crear un segundo usuario.
 RUN u="$(getent passwd 1000 | cut -d: -f1)" \
  && g="$(getent group 1000 | cut -d: -f1)" \
- && groupmod -n agent "$g" \
- && usermod -l agent -d /home/agent -m -s /bin/bash "$u"
+ && if [ "$g" != "agent" ]; then groupmod -n agent "$g"; fi \
+ && if [ "$u" != "agent" ]; then usermod -l agent -d /home/agent -s /bin/bash "$u"; fi
 
 # pnpm y yarn vía corepack; opencode fijado a la versión que usa Vesper.
 # Sin esto el primer pnpm/yarn espera un prompt de descarga y el test muere por timeout.
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable \
- && npm i -g opencode-ai@1.19.0 \
+RUN npm i -g --unsafe-perm corepack opencode-ai@1.19.0 \
+ && corepack enable \
  && npm cache clean --force
 
-# venv de Python para que `pip install -e .` funcione. PATH también en /etc/profile.d:
-# `bash -lc` (login) reconstruye el PATH desde los perfiles y perdería el ENV.
+# venv de Python para que `pip install -e .` funcione y `pytest` esté listo sin red.
+# PATH también en /etc/profile.d: `bash -lc` (login) reconstruye el PATH desde los perfiles y perdería el ENV.
 RUN python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --no-cache-dir pytest \
  && chown -R agent:agent /opt/venv \
  && echo 'export PATH=/opt/venv/bin:$PATH' > /etc/profile.d/venv.sh
 ENV PATH=/opt/venv/bin:$PATH \
@@ -37,5 +38,6 @@ RUN mkdir -p /workspace /home/agent/.local/share/opencode /home/agent/.cache \
 
 USER agent
 WORKDIR /workspace
+RUN python -m pytest --version && opencode --version
 ENTRYPOINT ["tini", "--"]
 CMD ["sleep", "infinity"]

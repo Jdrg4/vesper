@@ -10,5 +10,6 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["docker: requiere un daemon de Docker real y la imagen vesper-agent:1"]
 [tool.coverage.run]
 source = ["src"]
