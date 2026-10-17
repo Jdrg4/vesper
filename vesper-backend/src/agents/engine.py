@@ -104,6 +104,7 @@ class FakeEngine:
     hang: bool = False
     checks: Verification | None = None
     stopped: int = 0
+    prompts: list[str] = field(default_factory=list)
 
     async def run(
         self,
@@ -113,6 +114,7 @@ class FakeEngine:
         credentials: dict[str, str],
         on_activity: ActivityCallback,
     ) -> EngineResult:
+        self.prompts.append(prompt)
         for activity in self.activities:
             await on_activity(activity)
         if self.hang:

@@ -28,9 +28,11 @@ Mistral, Groq, OpenRouter y más— usando **tu propia API key**, guardada cifra
 por puesto, sin atarte a un proveedor, y en tu propio servidor.
 
 > [!WARNING]
-> **Está empezando.** El ciclo completo funciona (repo → agente → diff validado → PR), pero
-> Vesper aún no está listo para producción: el aislamiento por contenedor de cada job llega
-> en la próxima fase. Úsalo con tus propios repos, no como servicio público. Ver la
+> **Modos de aislamiento (`AGENT_ENGINE`).** Por defecto (`AGENT_ENGINE=opencode`), el agente
+> ejecuta comandos sobre el propio servidor: aceptable para revisar repositorios propios, **no**
+> para abrir el registro a terceros. Para aislar cada job en un contenedor sin privilegios (y
+> correr la suite de tests del repo antes y después), usa `AGENT_ENGINE=docker` contra un
+> anfitrión de jobs dedicado ([`deploy/jobs-host/`](deploy/jobs-host/README.md)). Ver la
 > [hoja de ruta](#hoja-de-ruta).
 
 ## Por qué Vesper
@@ -77,7 +79,7 @@ del sandbox:
 | **Secretos en el diff** | Se revisan las líneas añadidas en busca de keys de AWS, GitHub, Anthropic, OpenAI, Slack y Google, claves privadas, credenciales en cadenas de conexión y contraseñas en el código. Si aparece una, **no hay PR**: el job queda retenido. |
 | **Rutas sensibles** | Los cambios en workflows de CI, `package.json`, `requirements.txt`, `pyproject.toml` o `.env` esperan a un humano. |
 | **Acceso mínimo a GitHub** | Tokens de instalación de corta vida (`contents:write`, `pull_requests:write`, `metadata:read`), nunca un token personal. |
-| **Entorno aislado del runtime** | El agente recibe un entorno en lista blanca: ningún secreto del servidor y solo las keys del espacio de trabajo en curso. |
+| **Contenedor por job y PRs verificados** | Con `AGENT_ENGINE=docker`, cada job corre en un contenedor sin privilegios en un anfitrión Docker aparte (sin ver nunca el token de GitHub) y ejecuta la suite de tests antes y después: si una suite que pasaba se rompe, **no se abre PR**. |
 | **Los fallos del modelo se ven** | Si el proveedor rechaza la llamada, el job falla con su mensaje en vez de fingir que no había nada que arreglar. |
 
 ## Arranque rápido

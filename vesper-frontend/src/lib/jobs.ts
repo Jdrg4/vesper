@@ -12,7 +12,7 @@ export interface Job {
   pull_request_url: string | null;
   branch_name: string | null;
   diff_summary: string | null;
-  error_message: { error: string } | null;
+  error_message: { error: string; suite_log?: string } | null;
   started_at: string | null;
   completed_at: string | null;
   created_at: string;

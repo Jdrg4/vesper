@@ -61,6 +61,49 @@ describe("JobThread", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("El modelo no respondio: 403");
   });
 
+  it("needs_review por suite rota: muestra el motivo y el log de los tests", () => {
+    render(
+      <JobThread
+        job={{
+          ...base,
+          status: "needs_review",
+          diff_summary: "1 files changed: src/calc.py WARNING: la suite pasaba y ahora falla",
+          error_message: {
+            error: "La suite de tests pasaba y ahora falla",
+            suite_log: "FAILED tests/test_calc.py::test_suma - assert 1 == 2",
+          },
+        }}
+        repoName="acme/api"
+        onAbort={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/La suite de tests pasaba y ahora falla/)).toBeInTheDocument();
+    expect(
+      screen.getByText("FAILED tests/test_calc.py::test_suma - assert 1 == 2"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 archivo cambiado")).toBeInTheDocument();
+    expect(screen.getByText("src/calc.py")).toBeInTheDocument();
+  });
+
+  it("needs_review por secretos o rutas sensibles: mantiene el aviso clásico", () => {
+    render(
+      <JobThread
+        job={{
+          ...base,
+          status: "needs_review",
+          diff_summary: "1 files changed: .env WARNING: Sensitive path modified: .env",
+          error_message: null,
+        }}
+        repoName="acme/api"
+        onAbort={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/toca archivos sensibles o contiene algo con forma de secreto/)).toBeInTheDocument();
+    expect(screen.getByText(".env")).toBeInTheDocument();
+  });
+
   it("en curso: indica que trabaja y permite detenerlo", async () => {
     const onAbort = vi.fn();
     render(

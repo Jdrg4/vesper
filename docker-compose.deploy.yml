@@ -64,10 +64,21 @@ services:
       OPENCODE_ZEN_KEY: ${OPENCODE_ZEN_KEY:-}
       OPENCODE_ZEN_BASE_URL: ${OPENCODE_ZEN_BASE_URL:-https://opencode.ai/zen/go/v1}
       ALLOW_INSTANCE_KEY_FALLBACK: ${ALLOW_INSTANCE_KEY_FALLBACK:-false}
-      # Agent runtime (F4+). La imagen lo instala en /usr/local/bin.
+      # Agent runtime (F4+ / F6b). Con AGENT_ENGINE=opencode corre local; con
+      # AGENT_ENGINE=docker lanza un contenedor por job en el anfitrion de jobs
+      # (ver deploy/jobs-host/README.md).
       OPENCODE_BIN: ${OPENCODE_BIN:-/usr/local/bin/opencode}
       OPENCODE_PORT_POOL_START: ${OPENCODE_PORT_POOL_START:-14096}
       WORKSPACE_ROOT: /var/workspaces
+      AGENT_ENGINE: ${AGENT_ENGINE:-opencode}
+      AGENT_IMAGE: ${AGENT_IMAGE:-vesper-agent:1}
+      AGENT_DOCKER_NETWORK: ${AGENT_DOCKER_NETWORK:-vesper-jobs}
+      AGENT_JOB_CPUS: ${AGENT_JOB_CPUS:-2}
+      AGENT_JOB_MEMORY: ${AGENT_JOB_MEMORY:-4g}
+      AGENT_MAX_JOBS: ${AGENT_MAX_JOBS:-3}
+      DOCKER_HOST: ${DOCKER_HOST:-}
+      DOCKER_TLS_VERIFY: ${DOCKER_TLS_VERIFY:-}
+      DOCKER_CERT_PATH: ${DOCKER_CERT_PATH:-}
       # GitHub App (F3+).
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
@@ -83,6 +94,8 @@ services:
       # Workspaces efimeros por job (F4+): clones shallow de los repos del
       # tenant. No commitear el contenido; solo el mountpoint.
       - workspaces:/var/workspaces
+      # Certificados TLS de cliente para el anfitrion de jobs (F6b, solo lectura).
+      - docker_certs:/run/docker-certs:ro
 
   # Cola de jobs + cron de las watch_rules + recogida de jobs colgados. Sin el,
   # ningun repo se vigila y nada lo avisa. Misma imagen que el backend; arranca
@@ -103,6 +116,7 @@ services:
       disable: true
     volumes:
       - workspaces:/var/workspaces
+      - docker_certs:/run/docker-certs:ro
 
   frontend:
     build:
@@ -139,3 +153,4 @@ services:
 volumes:
   postgres_data:
   workspaces:
+  docker_certs:

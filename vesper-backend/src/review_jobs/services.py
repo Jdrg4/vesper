@@ -7,6 +7,7 @@ ReviewService: orquesta el flujo: clone → branch → opencode → git commit/p
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import re
 import time
@@ -21,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents.credentials import mark_used, resolve_credentials
+from src.agents.docker_engine import DockerOpencodeEngine
 from src.agents.engine import Activity, AgentEngine
 from src.agents.opencode_engine import OpencodeEngine
 from src.agents.runner import split_model
@@ -149,11 +151,16 @@ async def clear_events(job_id: str | uuid.UUID) -> None:
 # lanza herramientas a rafagas y el bus no necesita cada una.
 ACTIVITY_THROTTLE_SECONDS = 3.0
 
-EngineFactory = Callable[[str], AgentEngine]
+EngineFactory = Callable[..., AgentEngine]
 
 
 def default_engine_factory(workspace_base: Path) -> EngineFactory:
-    return lambda job_id: OpencodeEngine(workspace_base, job_id)
+    def build(job_id: str, tenant_id: str = "") -> AgentEngine:
+        if settings.agent_engine == "docker":
+            return DockerOpencodeEngine(workspace_base, job_id, tenant_id=tenant_id)
+        return OpencodeEngine(workspace_base, job_id)
+
+    return build
 
 
 # ------------------------------------------------------------  Tareas de fondo
@@ -747,9 +754,7 @@ class ReviewService:
             # El modelo lo elige el tenant en su configuracion; hardcodearlo
             # dejaba a `developer_model` sin ningun efecto.
             model=tenant.developer_model,
-            prompt=build_prompt(
-                data.task_type.value, repo.full_name, ref, data.prompt, run_tests=wants_tests()
-            ),
+            prompt=build_prompt(data.task_type.value, repo.full_name, ref, data.prompt),
         )
         self.db.add(job)
         await self.db.flush()
@@ -804,14 +809,21 @@ class ReviewService:
 
             await push_event(job_id, "progress", {"message": "Starting agent..."})
 
-            prompt = job.prompt or build_prompt(
-                job.task_type.value, repo.full_name, job.ref, run_tests=wants_tests()
-            )
-            # `create_job` siempre puebla `prompt`; el fallback cubre jobs viejos,
-            # que se escribieron cuando la columna admitia NULL.
+            # `run_tests` se decide al ejecutar, no al encolar: si se cambio
+            # `AGENT_ENGINE` de `docker` a `opencode` con jobs en cola, el motor
+            # local nunca recibe la orden de correr tests en el servidor.
+            base_prompt = (
+                job.prompt or build_prompt(job.task_type.value, repo.full_name, job.ref)
+            ).removesuffix(_RUN_TESTS)
+            prompt = base_prompt + _RUN_TESTS if wants_tests() else base_prompt
 
             await push_event(job_id, "progress", {"message": "Agent reviewing..."})
-            engine = self.engine_factory(str(job_id))
+            params = inspect.signature(self.engine_factory).parameters
+            engine = (
+                self.engine_factory(str(job_id), str(tenant_id))
+                if len(params) >= 2
+                else self.engine_factory(str(job_id))
+            )
             result = await engine.run(
                 workdir, prompt, job.model, credentials, _activity_publisher(job_id)
             )

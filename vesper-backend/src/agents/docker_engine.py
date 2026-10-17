@@ -161,6 +161,8 @@ class DockerOpencodeEngine(OpencodeEngine):
         **kw,
     ) -> None:
         super().__init__(workspace_base, job_id, **kw)
+        if not str(tenant_id).strip():
+            raise ValueError("tenant_id es obligatorio para aislar la caché del contenedor")
         self.tenant_id = str(tenant_id)
         self._client_factory = client_factory
         self._docker = None

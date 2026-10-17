@@ -129,3 +129,71 @@ def test_engine_result_checks_por_defecto_none():
 def test_run_tests_sigue_al_motor(monkeypatch, motor, esperado):
     monkeypatch.setattr(services.settings, "agent_engine", motor)
     assert services.wants_tests() is esperado
+
+
+def test_default_engine_factory_elige_motor_y_pasa_tenant(monkeypatch, tmp_path):
+    from src.agents.docker_engine import DockerOpencodeEngine
+    from src.agents.opencode_engine import OpencodeEngine
+
+    monkeypatch.setattr(services.settings, "agent_engine", "opencode")
+    local = services.default_engine_factory(tmp_path)("job-1", "tenant-a")
+    assert type(local) is OpencodeEngine
+    assert local.job_id == "job-1"
+
+    monkeypatch.setattr(services.settings, "agent_engine", "docker")
+    cont = services.default_engine_factory(tmp_path)("job-2", "tenant-b")
+    assert isinstance(cont, DockerOpencodeEngine)
+    assert cont.job_id == "job-2"
+    assert cont.tenant_id == "tenant-b"
+    with pytest.raises(ValueError, match="tenant_id"):
+        services.default_engine_factory(tmp_path)("job-3")
+
+
+async def test_run_job_pasa_tenant_id_a_la_factory_y_decide_run_tests_al_ejecutar(
+    db_session: AsyncSession, patched_github, monkeypatch
+):
+    """Deuda de seguridad §11: si un job se encola con `AGENT_ENGINE=docker` y luego se
+    cambia a `opencode` antes de ejecutarlo, el motor local NO debe recibir la orden de
+    correr tests del repo en el servidor."""
+    tenant = Tenant(name="V WS", slug=f"v-{_un()}")
+    db_session.add(tenant)
+    await db_session.flush()
+    repo = await _make_repo(db_session, tenant.id)
+
+    calls: list[tuple[str, str]] = []
+    engines: list[FakeEngine] = []
+
+    def factory(job_id: str, tenant_id: str):
+        calls.append((job_id, tenant_id))
+        eng = FakeEngine(checks=None)
+        engines.append(eng)
+        return eng
+
+    svc = services.ReviewService(
+        db_session, workspace_svc=_FakeWorkspace(_DIFF), engine_factory=factory
+    )
+
+    # 1. Creado con docker, ejecutado con opencode → NO pide correr tests.
+    monkeypatch.setattr(services.settings, "agent_engine", "docker")
+    job1 = await svc.create_job(
+        tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.quality)
+    )
+    assert "corre los tests" not in (job1.prompt or "")
+    await db_session.commit()
+
+    monkeypatch.setattr(services.settings, "agent_engine", "opencode")
+    await svc.run_job(job1.id, tenant.id)
+    assert calls[0] == (str(job1.id), str(tenant.id))
+    assert "corre los tests" not in engines[0].prompts[0]
+
+    # 2. Creado con opencode, ejecutado con docker → SÍ pide correr tests al ejecutar.
+    monkeypatch.setattr(services.settings, "agent_engine", "opencode")
+    job2 = await svc.create_job(
+        tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.quality)
+    )
+    await db_session.commit()
+
+    monkeypatch.setattr(services.settings, "agent_engine", "docker")
+    await svc.run_job(job2.id, tenant.id)
+    assert calls[1] == (str(job2.id), str(tenant.id))
+    assert "corre los tests del repo si existen" in engines[1].prompts[0]

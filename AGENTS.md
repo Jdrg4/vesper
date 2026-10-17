@@ -61,9 +61,9 @@ al tocar la lógica de una fase, leer su spec antes de cambiarla.
 | `postgres` | PostgreSQL 16+ | 55432 | Postgres local | Contenedor del compose |
 | `redis` | Redis | 6379 | Opcional (degrada con gracia) | Contenedor del compose |
 | `worker` (cola + cron) | Arq | — | `arq src.worker.WorkerSettings` | Mismo contenedor, otro `command` |
-| `opencode` (runtime agente) | binario opencode | 14096+ (pool dinámico) | Primer harness (F6 lo pone tras una interfaz) | Sandbox por job |
+| `opencode` (runtime agente) | `opencode` / `vesper-agent:1` | 14096+ / 4096→efímero | `AGENT_ENGINE=opencode` (local) | `AGENT_ENGINE=docker` (contenedor por job en anfitrión aparte, TCP 2376 + TLS) |
 
-**Desarrollo local sin Docker**, salvo el sandbox del agent runner.
+**Desarrollo local sin Docker**, salvo que uses `AGENT_ENGINE=docker`.
 
 ## Comandos
 
