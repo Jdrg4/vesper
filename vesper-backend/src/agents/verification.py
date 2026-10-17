@@ -59,19 +59,24 @@ def _node(repo: Path) -> TestCommand | None:
 
 def _python(repo: Path) -> TestCommand | None:
     pyproject = repo / "pyproject.toml"
-    has_reqs = (repo / "requirements.txt").exists() or any(repo.glob("requirements*.txt"))
-    if not (pyproject.exists() or has_reqs):
+    req_files = sorted(repo.glob("requirements*.txt"))
+    if not (pyproject.exists() or req_files):
         return None
-    pyproject_text = (
-        pyproject.read_text(encoding="utf-8", errors="replace") if pyproject.exists() else ""
-    )
+    try:
+        pyproject_text = (
+            pyproject.read_text(encoding="utf-8", errors="replace") if pyproject.exists() else ""
+        )
+    except OSError:
+        pyproject_text = ""
     has_tests = (
         (repo / "tests").is_dir() or any(repo.glob("test_*.py")) or "[tool.pytest" in pyproject_text
     )
     if not has_tests:
         return None
-    install = "pip install -e ." if pyproject.exists() else "pip install -r requirements.txt"
-    return TestCommand(install, "python -m pytest -q")
+    if pyproject.exists():
+        return TestCommand("pip install -e .", "python -m pytest -q")
+    req = "requirements.txt" if (repo / "requirements.txt").exists() else req_files[0].name
+    return TestCommand(f"pip install -r {req}", "python -m pytest -q")
 
 
 def _make(repo: Path) -> TestCommand | None:

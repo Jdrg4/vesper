@@ -197,3 +197,36 @@ async def test_run_job_pasa_tenant_id_a_la_factory_y_decide_run_tests_al_ejecuta
     await svc.run_job(job2.id, tenant.id)
     assert calls[1] == (str(job2.id), str(tenant.id))
     assert "corre los tests del repo si existen" in engines[1].prompts[0]
+
+
+def test_pr_body_muestra_icono_timeout():
+    checks = _checks(1, 1, timeout=True)
+    body = services._pr_body("quality", "p/m", "1 files changed: a.py", checks)
+    assert "- Antes: ❌" in body
+    assert "- Después: ⏱" in body
+
+
+async def test_broke_con_warning_de_seguridad_conserva_ambos_avisos(
+    db_session: AsyncSession, patched_github
+):
+    tenant = Tenant(name="V WS", slug=f"v-{_un()}")
+    db_session.add(tenant)
+    await db_session.flush()
+    repo = await _make_repo(db_session, tenant.id)
+    diff_sensible = [{"file": ".github/workflows/ci.yml", "patch": "@@ -1 +1 @@\n+run: echo 1"}]
+    svc = services.ReviewService(
+        db_session,
+        workspace_svc=_FakeWorkspace(diff_sensible),
+        engine_factory=lambda _jid: FakeEngine(checks=_checks(0, 1, log="FAILED test_ci")),
+    )
+    job = await svc.create_job(
+        tenant, JobCreateRequest(repository_id=repo.id, task_type=TaskType.quality)
+    )
+    await db_session.commit()
+    await svc.run_job(job.id, tenant.id)
+    await db_session.refresh(job)
+    assert job.status == JobStatus.needs_review
+    assert "la suite pasaba y ahora falla" in job.diff_summary
+    assert "Sensitive path modified" in job.diff_summary
+    assert "Sensitive path modified" in job.error_message["error"]
+    assert job.error_message["suite_log"] == "FAILED test_ci"

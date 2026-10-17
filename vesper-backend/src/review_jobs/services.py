@@ -846,10 +846,11 @@ class ReviewService:
             checks = result.checks
             if verdict(checks) is Verdict.broke:
                 # La suite pasaba antes y falla después: sin PR, y el log al usuario.
+                extra = f"; {warning}" if warning else ""
                 job.status = JobStatus.needs_review
-                job.diff_summary = f"{summary} WARNING: la suite pasaba y ahora falla"
+                job.diff_summary = f"{summary} WARNING: la suite pasaba y ahora falla{extra}"
                 job.error_message = {
-                    "error": "La suite de tests pasaba y ahora falla",
+                    "error": f"La suite de tests pasaba y ahora falla{extra}",
                     "suite_log": checks.after.log_tail,
                 }
                 job.completed_at = datetime.now(UTC)

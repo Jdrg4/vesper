@@ -83,28 +83,53 @@ GC puede matar el job a mitad de camino).
   `VESPER_EVAL_CREDENTIALS="proveedor=key"`. Gasta saldo y ejecuta código que escribe el
   modelo sobre el fixture: solo a mano, nunca en CI.
 
+## Contenedor por job y PRs verificados (F6b)
+
+- **`AGENT_ENGINE` elige el motor** en `default_engine_factory` (`review_jobs/services.py`):
+  `opencode` (por defecto, proceso local para desarrollo) o `docker` (`DockerOpencodeEngine` en
+  `src/agents/docker_engine.py`). Nunca cae de `docker` a `opencode` en silencio: si el daemon
+  Docker no responde, el job falla con un mensaje legible.
+- **Un contenedor sin privilegios por job (`vesper-agent:1`)**, en un anfitrión Docker separado
+  del backend (`DOCKER_HOST=tcp://<ip>:2376`, `DOCKER_TLS_VERIFY=1`, `DOCKER_CERT_PATH`):
+  usuario `agent` (uid 1000), `cap_drop=["ALL"]`, `security_opt=["no-new-privileges"]`,
+  `pids_limit=512`, `nano_cpus` y `mem_limit`/`memswap_limit` de `settings`. Semáforo de proceso
+  `_SLOTS` (`AGENT_MAX_JOBS`) liberado siempre en `_teardown`.
+- **El token de instalación de GitHub jamás entra al contenedor**: `WorkspaceService.clone`
+  limpia la URL de `origin` y borra `.git/logs`, y `_repo_tar` excluye `.git/config` cruda,
+  `.git/FETCH_HEAD`, `.git/logs` y `.git/hooks`, inyectando una `.git/config` saneada sin
+  credenciales ni `extraheader`/`insteadOf`/`helper` y con `dereference=False` (no sigue symlinks
+  del clon hacia el host).
+- **Caché de paquetes por tenant**: volumen `vesper-cache-<tenant_id>` montado en
+  `/home/agent/.cache` (`tenant_id` obligatorio en `DockerOpencodeEngine`) para que un tenant no
+  pueda envenenar la caché de otro.
+- **Red `vesper-jobs` (`172.30.0.0/16`, bridge `vesper-jobs0`, `enable_icc=false`)**: creada por
+  `deploy/jobs-host/setup.sh` con reglas `DOCKER-USER` (salida a internet permitida, bloqueo a
+  RFC1918, CGNAT/Tailscale `100.64.0.0/10` y link-local/metadata `169.254.0.0/16`) e `INPUT`
+  (los contenedores no alcanzan al propio anfitrión).
+- **Verificación antes y después (`src/agents/verification.py`)**: `detect_test_commands`
+  detecta Node (`pnpm`/`yarn`/`npm`), Python (`pyproject.toml`/`requirements*.txt` + `pytest`) y
+  `Makefile` (`test:`). El motor corre la suite antes del agente, excluye artefactos nuevos de
+  la suite base (`.git/info/exclude`), ejecuta `opencode`, extrae el parche **antes** de la
+  segunda suite (`git add -A && git diff --cached --binary`), corre la suite después (timeout
+  900 s por comando, salida por `tail_redacted`) y aplica el parche en el clon del worker con
+  `git apply --binary --index -`. `WorkspaceService.commit_and_push` commitea con `--no-verify`
+  para que ningún hook escrito por el parche se ejecute en el worker.
+- **El veredicto decide el PR**: `verified` (✅→✅), `already_red` (❌→*) y `unverified` abren PR
+  con sección `## Verificación`; `broke` (✅→❌) deja el job en `needs_review` sin PR y guarda
+  `error_message.suite_log` (mostrado en la UI). La instrucción «Antes de terminar, corre los
+  tests…» se añade al prompt **al ejecutar** el job (`run_job`), nunca al encolarlo, y solo si
+  `AGENT_ENGINE=docker`.
+
 ## Deuda conocida de este tema
 
-- **El installation token sigue apareciendo en la línea de comandos del push.**
-  Ya no se persiste en `.git/config` del workspace (el remote guardado va sin
-  credenciales), pero durante el `git push` es visible en la lista de procesos
-  de la máquina. Con sandbox por job es aceptable; sin él, no.
-
+- **El installation token sigue apareciendo en la línea de comandos del push en el worker.**
+  Ya no se persiste en `.git/config` ni en `.git/logs` y nunca viaja al contenedor de job, pero
+  durante el `git push` es visible en la lista de procesos del worker.
 - **`error_message` va tal cual a la UI del tenant, con rutas del servidor
   dentro.** Un fallo de git enseña `<workspaces>/<tenant>/<repo>`. No
   es fuga entre tenants —esos ids ya son suyos— pero expone la disposición del
   disco del servidor. Habría que separar el detalle técnico (log) del mensaje
   que ve el usuario.
-- **`opencode serve` sin `OPENCODE_SERVER_PASSWORD` queda abierto** y
-  `GET /config/providers` devuelve las API keys en claro. Ya se arranca con un
-  password aleatorio por job, pero **esto refuerza que el sandbox por job es
-  obligatorio**: el código del repo del tenant corre junto al runtime.
-
-- **Sin aislamiento de sistema de archivos por job** (lo resuelve F6b): el agente
-  puede leer otros workspaces y el disco del servidor. Los secretos del backend ya no
-  están a su alcance (lista blanca de entorno), pero las credenciales del propio job
-  y los clones de otros tenants sí, hasta que cada job corra en su contenedor.
-
-- **Persistencia de opencode por job:** queremos efímero. Definir si hace falta
-  volumen efímero o `--no-state`.
+- **Con `AGENT_ENGINE=opencode` (modo local de desarrollo) no hay aislamiento de sistema de
+  archivos ni de red**: usar `AGENT_ENGINE=docker` en despliegues multi-tenant.
 - **Cuotas / throttle por tenant contra Zen.** Ninguna protección todavía.

@@ -55,6 +55,14 @@ def test_python_con_requirements_y_test_en_raiz(tmp_path):
     ]
 
 
+def test_python_con_requirements_dev_sin_requirements_txt(tmp_path):
+    (tmp_path / "requirements-dev.txt").write_text("pytest\n")
+    (tmp_path / "test_algo.py").write_text("")
+    assert detect_test_commands(tmp_path) == [
+        TestCommand("pip install -r requirements-dev.txt", "python -m pytest -q")
+    ]
+
+
 def test_python_con_pyproject_tool_pytest_sin_carpeta(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
     assert len(detect_test_commands(tmp_path)) == 1
@@ -102,6 +110,7 @@ def test_veredicto_verified():
 
 def test_veredicto_broke():
     assert verdict(_v(0, 1)) is Verdict.broke
+    assert verdict(_v(0, None)) is Verdict.broke
 
 
 @pytest.mark.parametrize("after", [0, 1])
